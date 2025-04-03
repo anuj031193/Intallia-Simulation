@@ -1,0 +1,106 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>True</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
+    <UseWPF>False</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="App\**" />
+    <EmbeddedResource Remove="App\**" />
+    <None Remove="App\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="bll\IValidationForm.cs" />
+    <Compile Remove="bll\ValidationService.cs" />
+    <Compile Remove="bll\ValidationService1.cs" />
+    <Compile Remove="excelapp\ChartManager1.cs" />
+    <Compile Remove="excelapp\ExcelValidationForm.cs" />
+    <Compile Remove="excelapp\ExcelValidationForm.Designer.cs" />
+    <Compile Remove="excelapp\ExcelValidationform1.cs" />
+    <Compile Remove="excelapp\og_ChartManager.cs" />
+    <Compile Remove="Form1.cs" />
+    <Compile Remove="Form1.Designer.cs" />
+    <Compile Remove="Form2.cs" />
+    <Compile Remove="Form2.Designer.cs" />
+    <Compile Remove="Form3.cs" />
+    <Compile Remove="Form3.Designer.cs" />
+    <Compile Remove="Form4.cs" />
+    <Compile Remove="Form4.Designer.cs" />
+    <Compile Remove="Form5.cs" />
+    <Compile Remove="Form5.Designer.cs" />
+    <Compile Remove="Form6.cs" />
+    <Compile Remove="Form6.Designer.cs" />
+    <Compile Remove="Form7 - Copyforacell.cs" />
+    <Compile Remove="Form7 - Copyforacell.Designer.cs" />
+    <Compile Remove="Form7.cs" />
+    <Compile Remove="Form7.Designer.cs" />
+    <Compile Remove="forms\frmSimulationSoftware.Designer1.cs" />
+    <Compile Remove="forms\frmSimulationSoftware1.cs" />
+    <Compile Remove="forms\frmSimulationSoftware2.cs" />
+    <Compile Remove="forms\frmSimulationSoftware2.Designer.cs" />
+    <Compile Remove="forms\ValidationForm.cs" />
+    <Compile Remove="forms\ValidationForm.Designer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Remove="excelapp\ExcelValidationForm.resx" />
+    <EmbeddedResource Remove="Form1.resx" />
+    <EmbeddedResource Remove="Form2.resx" />
+    <EmbeddedResource Remove="Form3.resx" />
+    <EmbeddedResource Remove="Form4.resx" />
+    <EmbeddedResource Remove="Form5.resx" />
+    <EmbeddedResource Remove="Form6.resx" />
+    <EmbeddedResource Remove="Form7 - Copyforacell.resx" />
+    <EmbeddedResource Remove="Form7.resx" />
+    <EmbeddedResource Remove="forms\frmSimulationSoftware1.resx" />
+    <EmbeddedResource Remove="forms\frmSimulationSoftware2.resx" />
+    <EmbeddedResource Remove="forms\ValidationForm.resx" />
+  </ItemGroup>
+
+  
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.2.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.3" />
+    <PackageReference Include="Microsoft.Office.Interop.Excel" Version="15.0.4795.1001" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.Data.SqlClient" Version="4.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Properties\Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Service Include="{508349b6-6b84-4df5-91f0-309beebad82d}" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Properties\Resources\" />
+  </ItemGroup>
+
+</Project>
