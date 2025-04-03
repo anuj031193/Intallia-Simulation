@@ -169,12 +169,29 @@ namespace JobSimulation.DAL
             }).ToList();
         }
 
-        public async Task<List<JobTask>> GetTasksForActivityAsync(string activityId, string tableName)
+        public async Task<List<JobTask>> GetTasksForActivityAsync(string activityId)
         {
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            // Ensure the tableName is properly escaped to avoid SQL injection
+            // Get SectionId from ActivityId
+            var sectionIdQuery = "SELECT SectionId FROM Activity WHERE ActivityId = @ActivityId";
+            var sectionId = await connection.QueryFirstOrDefaultAsync<string>(sectionIdQuery, new { ActivityId = activityId });
+
+            if (string.IsNullOrEmpty(sectionId))
+            {
+                throw new Exception("SectionId not found for the given ActivityId.");
+            }
+
+            // Get SoftwareId using SectionId
+            var softwareId = await GetSoftwareIdBySectionId(sectionId);
+
+            if (string.IsNullOrEmpty(softwareId) || !_softwareMappings.TryGetValue(softwareId.ToLower(), out var tableName))
+            {
+                throw new Exception("No valid table mapping found for the given SoftwareId.");
+            }
+
+            // Replace {0} with the actual table name
             var query = $@"
         SELECT t.TaskId, t.SectionId, t.[Order], t.Description, 
             d.TaskDescription, d.SheetName, d.SelectTask, d.[From], d.[To], 
