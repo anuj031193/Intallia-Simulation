@@ -244,5 +244,34 @@ namespace JobSimulation.DAL
 
             await command.ExecuteNonQueryAsync();
         }
+
+        public async Task<List<Section>> GetAllSectionsBySimulationIdAsync(string simulationId)
+        {
+            var sections = new List<Section>();
+
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = "SELECT * FROM Section WHERE SimulationId = @SimulationId ORDER BY [Order]";
+            using var command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@SimulationId", simulationId);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                sections.Add(new Section
+                {
+                    SectionId = reader["SectionId"].ToString(),
+                    Title = reader["Title"].ToString(),
+                    SoftwareId = reader["SoftwareId"].ToString(),
+                    Order = Convert.ToInt32(reader["Order"]),
+                    StudentFile = reader["StudentFile"].ToString(),
+                    SimulationId = reader["SimulationId"].ToString()
+                });
+            }
+
+            return sections;
+        }
+
     }
 }

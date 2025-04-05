@@ -22,6 +22,8 @@ namespace JobSimulation.Managers
         public string UserId { get; }
         public string SimulationId { get; }
         public int Attempt { get; }
+        private List<Section> _sections;
+        private int _currentSectionIndex; 
         public ActivityRepository ActivityRepository { get; }
         private readonly SectionRepository _sectionRepository;
         private readonly FileService _fileService;
@@ -81,6 +83,52 @@ namespace JobSimulation.Managers
             UserId = userId;
             SimulationId = simulationId;
             Attempt = attempt;
+        }
+
+
+
+        public void InitializeSections(List<Section> sections)
+        {
+            _sections = sections;
+            _currentSectionIndex = _sections.FindIndex(s => s.SectionId == _currentSection.SectionId);
+        }
+
+
+        public string GetLastSectionIdForUser()
+        {
+            var row = _progressTable.Rows
+                .Cast<DataRow>()
+                .Where(r => r["UserId"].ToString() == UserId && r["SimulationId"].ToString() == SimulationId)
+                .OrderByDescending(r => Convert.ToDateTime(r["ModifyDate"]))
+                .FirstOrDefault();
+
+            return row?["SectionId"]?.ToString();
+        }
+
+        private void SaveSectionProgress(string sectionId, int taskIndex)
+        {
+            var existingRow = _progressTable.Rows
+                .Cast<DataRow>()
+                .FirstOrDefault(r => r["UserId"].ToString() == UserId && r["SimulationId"].ToString() == SimulationId);
+
+            if (existingRow != null)
+            {
+                existingRow["SectionId"] = sectionId;
+                existingRow["LastTaskIndex"] = taskIndex;
+                existingRow["ModifyDate"] = DateTime.UtcNow;
+            }
+            else
+            {
+                var row = _progressTable.NewRow();
+                row["UserId"] = UserId;
+                row["SimulationId"] = SimulationId;
+                row["SectionId"] = sectionId;
+                row["LastTaskIndex"] = taskIndex;
+                row["ModifyDate"] = DateTime.UtcNow;
+                _progressTable.Rows.Add(row);
+            }
+
+            _progressTable.AcceptChanges(); // or write to file/db
         }
 
         public async Task LoadSectionAsync(Section section)
@@ -204,7 +252,6 @@ namespace JobSimulation.Managers
 
             return prevSection;
         }
-
 
         public async Task<string> CheckAnswerAsync(int taskIndex)
         {
@@ -491,13 +538,36 @@ namespace JobSimulation.Managers
             };
         }
 
-        private async Task<bool> AreAllTasksCompleted(string sectionId)
+        public async Task<bool> AreAllTasksCompleted()
         {
             var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(ActivityId);
             return Tasks.All(task =>
                 skillMatrixEntries.Any(e =>
                     e.TaskId == task.TaskId &&
                     e.Status == StatusTypes.Completed));
+        }
+
+        public async Task CompleteAllTasks()
+        {
+            foreach (var task in Tasks)
+            {
+                var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, task.TaskId);
+
+                var skillMatrix = new SkillMatrix
+                {
+                    ActivityId = ActivityId,
+                    TaskId = task.TaskId,
+                    Status = StatusTypes.Completed,
+                    AttemptstoSolve = existingEntry?.AttemptstoSolve ?? 1,
+                    TaskAttempt = existingEntry?.TaskAttempt ?? 1,
+                    TotalTime = _taskElapsedTimes[Tasks.IndexOf(task)],
+                    ModifyDate = DateTime.UtcNow
+                };
+
+                await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
+            }
+
+            await UpdateActivityStatusAsync();
         }
 
         private async Task LoadNextSectionAsync()
@@ -513,7 +583,7 @@ namespace JobSimulation.Managers
             }
         }
 
-    
+
         private void CloseFile(string filePath)
         {
             try
@@ -540,9 +610,6 @@ namespace JobSimulation.Managers
             }
         }
 
-
-   
-      
         private async Task HandleSectionCompletion()
         {
             var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(ActivityId);
@@ -558,20 +625,6 @@ namespace JobSimulation.Managers
                 });
             }
         }
-
-      
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -595,7 +648,7 @@ namespace JobSimulation.Managers
             {
                 CurrentTaskIndex--;
                 await SaveCurrentStateAsync();
-                await LoadTaskAsync(CurrentTaskIndex); // Load the current task
+                await LoadTaskAsync(CurrentTaskIndex);// Load the current task
             }
         }
 
@@ -636,3 +689,7 @@ namespace JobSimulation.Managers
 
     }
 }
+
+
+
+

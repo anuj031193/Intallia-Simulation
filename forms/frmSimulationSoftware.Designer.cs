@@ -62,6 +62,7 @@ namespace JobSimulation.Forms
             btnSaveandNextSession = new Button();
             btnSaveandPreviousSession = new Button();
             btnSaveandExit = new Button();
+            btnCompleteSimulation = new Button();
             ((System.ComponentModel.ISupportInitialize)dataGridView1).BeginInit();
             ((System.ComponentModel.ISupportInitialize)dataGridView2).BeginInit();
             ((System.ComponentModel.ISupportInitialize)dataGridView3).BeginInit();
@@ -266,6 +267,14 @@ namespace JobSimulation.Forms
             btnSaveandExit.Name = "btnSaveandExit";
             btnSaveandExit.UseVisualStyleBackColor = false;
             btnSaveandExit.Click += btnSaveAndExit_Click;
+
+
+            //btnCompleteSimulation
+            btnCompleteSimulation.BackColor = Color.Silver;
+            resources.ApplyResources(btnCompleteSimulation, "btnCompleteSimulation");
+            btnCompleteSimulation.Name = "btnCompleteSimulation";
+            btnCompleteSimulation.UseVisualStyleBackColor = false;
+            btnCompleteSimulation.Click += btnCompleteSimulation_Click;
             // 
             // frmSimulationSoftware
             // 
@@ -275,6 +284,7 @@ namespace JobSimulation.Forms
             Controls.Add(btnSaveandExit);
             Controls.Add(btnSaveandNextSession);
             Controls.Add(btnSaveandPreviousSession);
+            Controls.Add(btnCompleteSimulation);
             Controls.Add(lblHint);
             Controls.Add(EndCell);
             Controls.Add(StartCell);
@@ -354,6 +364,7 @@ namespace JobSimulation.Forms
         private System.Windows.Forms.Button btnSaveandNextSession;
         private System.Windows.Forms.Button btnSaveandPreviousSession;
         private System.Windows.Forms.Button btnSaveandExit;
+        private System.Windows.Forms.Button btnCompleteSimulation;
 
 
         private bool isDragging = false;
@@ -433,6 +444,10 @@ namespace JobSimulation.Forms
         // Hover effects for buttons
         private void InitializeButtonHoverEffects()
         {
+            btnCompleteSimulation.MouseEnter += (sender, e) => btnCompleteSimulation.BackColor = Color.DarkGray;
+            btnCompleteSimulation.MouseLeave += (sender, e) => btnCompleteSimulation.BackColor = Color.Silver;
+
+
             btnSaveandExit.MouseEnter += (sender, e) => btnSaveandExit.BackColor = Color.DarkGray;
             btnSaveandExit.MouseLeave += (sender, e) => btnSaveandExit.BackColor = Color.Silver;
 
@@ -497,7 +512,7 @@ namespace JobSimulation.Forms
             toolTip.SetToolTip(btnSaveandExit, "Click to save and exit.");
             toolTip.SetToolTip(btnSaveandNextSession, "Click to save and move to the next session.");
             toolTip.SetToolTip(btnSaveandPreviousSession, "Click to save and move to the Previous session.");
-
+            toolTip.SetToolTip(btnCompleteSimulation, "Click to complete the simulation."); 
             toolTip.SetToolTip(btnStart, "Click to start the simulation.");
             toolTip.SetToolTip(btnPrevious, "Click to go to the previous section.");
             toolTip.SetToolTip(btnNext, "Click to go to the next section.");

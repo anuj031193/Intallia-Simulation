@@ -4,7 +4,7 @@ namespace JobSimulation.Models
 {
     public class JobTask
     {
-        public string TaskId { get; set; }
+        public string? TaskId { get; set; }
         public string SectionId { get; set; }
         public int Order { get; set; }
         public string Description { get; set; }
@@ -28,6 +28,16 @@ namespace JobSimulation.Models
         public string Hint { get; set; }
         public string SkillName { get; set; }
         public string SkillScore { get; set; }
+    }
+
+    public class WordTaskDetails
+    {
+        public string TaskDescription { get; set; }
+        public string Hint { get; set; }
+        public string TaskLocation { get; set; }
+        public string SkillName { get; set; }
+        public string SkillScore { get; set; }
+
     }
 
 

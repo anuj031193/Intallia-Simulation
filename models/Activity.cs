@@ -8,7 +8,6 @@ namespace JobSimulation.Models
 {
     public class Activity
     {
-        public int CurrentTaskIndex { get; set; }
         public string ActivityId { get; set; }
         public string UserId { get; set; }
         public string SimulationId { get; set; }

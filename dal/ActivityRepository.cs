@@ -439,21 +439,17 @@ namespace JobSimulation.DAL
         public async Task<string> GenerateNewActivityIdAsync(string userId, string simulationId, string sectionId, bool increaseAttempt = false)
         {
             using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
             var count = await connection.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM Activity WHERE UserId = @userId AND SimulationId = @simulationId AND SectionId = @sectionId",
-                new { userId, simulationId, sectionId });
+                "SELECT COUNT(*) FROM Activity WHERE UserId = @UserId AND SimulationId = @SimulationId AND SectionId = @SectionId",
+                new { UserId = userId, SimulationId = simulationId, SectionId = sectionId });
 
             if (increaseAttempt)
             {
-                var updateAttemptQuery = @"
-                UPDATE Activity
-                SET SectionAttempt = SectionAttempt + 1
-                WHERE UserId = @UserId AND SimulationId = @SimulationId AND SectionId = @SectionId";
-                using var updateCommand = new SqlCommand(updateAttemptQuery, connection);
-                updateCommand.Parameters.AddWithValue("@UserId", userId);
-                updateCommand.Parameters.AddWithValue("@SimulationId", simulationId);
-                updateCommand.Parameters.AddWithValue("@SectionId", sectionId);
-                await updateCommand.ExecuteNonQueryAsync();
+                await connection.ExecuteAsync(
+                    "UPDATE Activity SET SectionAttempt = SectionAttempt + 1 WHERE UserId = @UserId AND SimulationId = @SimulationId AND SectionId = @SectionId",
+                    new { UserId = userId, SimulationId = simulationId, SectionId = sectionId });
             }
 
             return $"{simulationId}-{sectionId}-{userId}-{DateTime.UtcNow:yyyyMMddHHmm}-A{count + 1}";
