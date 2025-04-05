@@ -31,7 +31,7 @@ namespace JobSimulation.Forms
 
         private readonly SectionRepository _sectionRepository;
         private readonly string _simulationId;
-        private readonly string _sectionId;
+        private  string _sectionId;
         private readonly string _userId;
 
         public frmSimulationSoftware(

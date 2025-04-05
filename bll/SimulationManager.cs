@@ -16,12 +16,12 @@ namespace JobSimulation.Managers
     public class SimulationManager
     {
         public int CurrentTaskIndex { get; private set; }
-        public List<JobTask> Tasks { get; }
-        public string FilePath { get; }
-        public string ActivityId { get; }
+        public List<JobTask> Tasks { get; private set; }
+        public string FilePath { get; private set; }
+        public string ActivityId { get; private set; }
         public string UserId { get; }
         public string SimulationId { get; }
-        public int Attempt { get; }
+        public int Attempt { get; private set; }
         private List<Section> _sections;
         private int _currentSectionIndex; 
         public ActivityRepository ActivityRepository { get; }
@@ -83,6 +83,30 @@ namespace JobSimulation.Managers
             UserId = userId;
             SimulationId = simulationId;
             Attempt = attempt;
+        }
+
+        public void UpdateSectionData(
+    List<JobTask> newTasks,
+    string newFilePath,
+    string newSectionId,
+    string newSoftwareId,
+    string newActivityId,
+    int newAttempt,
+    Section newCurrentSection)
+        {
+            Tasks = newTasks;
+            FilePath = newFilePath;
+            ActivityId = newActivityId;
+            Attempt = newAttempt;
+            _currentSection = newCurrentSection;
+
+            // Reset task tracking
+            CurrentTaskIndex = 0;
+            _taskElapsedTimes.Clear();
+            for (int i = 0; i < Tasks.Count; i++)
+            {
+                _taskElapsedTimes[i] = 0;
+            }
         }
 
 
@@ -613,32 +637,7 @@ namespace JobSimulation.Managers
             }
         }
 
-        public void UpdateSectionData(
-      List<JobTask> newTasks,
-      string newFilePath,
-      string newSectionId,
-      string newSoftwareId,
-      string newActivityId,
-      int newAttempt,
-      Section newCurrentSection)
-        {
-            Tasks = newTasks;
-            FilePath = newFilePath;
-            SectionId = newSectionId;
-            SoftwareId = newSoftwareId;
-            ActivityId = newActivityId;
-            Attempt = newAttempt;
-            CurrentSection = newCurrentSection;
-
-            // Reset task tracking
-            CurrentTaskIndex = 0;
-            _taskElapsedTimes = new Dictionary<int, int>();
-            for (int i = 0; i < Tasks.Count; i++)
-            {
-                _taskElapsedTimes[i] = 0;
-            }
-        }
-
+     
 
 
     }
