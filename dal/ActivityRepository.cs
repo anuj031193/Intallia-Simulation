@@ -81,40 +81,42 @@ namespace JobSimulation.DAL
         public async Task<string> CalculateResultAsync(string activityId)
         {
             var skillMatrices = await _skillMatrixRepository.GetForActivityAsync(activityId);
+            if (skillMatrices == null || !skillMatrices.Any())
+                return StatusTypes.NeedsImprovement;
 
-            if (skillMatrices == null)
+            var taskResults = new List<(int attempt, int hints)>();
+
+            foreach (var task in skillMatrices.GroupBy(sm => sm.TaskId))
             {
-                return "Error: No skill matrices found.";
+                var latest = task.OrderByDescending(sm => sm.ModifyDate).First();
+                if (latest.Status == StatusTypes.Completed)
+                {
+                    taskResults.Add((latest.TaskAttempt, latest.HintsChecked));
+                }
+                else
+                {
+                    // Task was never completed successfully
+                    return StatusTypes.NeedsImprovement;
+                }
             }
 
-            var completedTasks = skillMatrices.Count(sm => sm.Status == "Completed");
-            var totalTasks = skillMatrices.Count();
+            // Determine overall result based on worst performance
+            if (taskResults.Any(r => r.attempt >= 3))
+                return StatusTypes.Developing;
 
-            if (totalTasks == 0)
-            {
-                return "Not Started";
-            }
+            if (taskResults.Any(r => r.attempt == 2))
+                return taskResults.All(r => r.attempt == 2 && r.hints == 0)
+                    ? StatusTypes.Proficient
+                    : StatusTypes.Developing;
 
-            double completionPercentage = (double)completedTasks / totalTasks;
+            if (taskResults.All(r => r.attempt == 1 && r.hints == 0))
+                return StatusTypes.Mastered;
 
-            if (completionPercentage >= 0.9)
-            {
-                return "Mastered";
-            }
-            else if (completionPercentage >= 0.7)
-            {
-                return "Proficient";
-            }
-            else if (completionPercentage >= 0.5)
-            {
-                return "Competent";
-            }
-            else
-            {
-                return "Needs Improvement";
-            }
+            if (taskResults.All(r => r.attempt == 1))
+                return StatusTypes.Proficient;
+
+            return StatusTypes.Developing;
         }
-
         public async Task<string> GetLastSectionForUserAsync(string userId, string simulationId)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -131,41 +133,51 @@ namespace JobSimulation.DAL
 
         public async Task SaveActivityAsync(Activity activity, string calculatedResult = null)
         {
+            // Validate Status
+            var validStatuses = new[]
+            {
+        StatusTypes.NotStarted,
+        StatusTypes.InProgress,
+        StatusTypes.Completed,
+        StatusTypes.InComplete,
+        StatusTypes.PartiallyCompleted
+    };
+
+            if (!validStatuses.Contains(activity.Status))
+            {
+                throw new ArgumentException("Invalid status value");
+            }
+
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
-
-            var currentStatus = await connection.QueryFirstOrDefaultAsync<string>(
-                "SELECT Status FROM Activity WHERE ActivityId = @ActivityId",
-                new { activity.ActivityId }
-            );
 
             string finalResult = calculatedResult ?? activity.Result;
 
             var query = @"
-            IF EXISTS (SELECT 1 FROM Activity WHERE ActivityId = @ActivityId)
-            BEGIN
-                UPDATE Activity 
-                SET Status = @Status,
-                    SectionAttempt = @SectionAttempt,
-                    StudentFile = @StudentFile,
-                    ModifyDate = @ModifyDate,
-                    ModifyBy = @ModifyBy,
-                    Result = @Result
-                WHERE ActivityId = @ActivityId
-            END
-            ELSE
-            BEGIN
-                INSERT INTO Activity (
-                    ActivityId, UserId, SimulationId, SectionId, 
-                    Status, SectionAttempt, StudentFile, 
-                    CreateDate, ModifyDate, CreateBy, ModifyBy, Result
-                )
-                VALUES (
-                    @ActivityId, @UserId, @SimulationId, @SectionId,
-                    @Status, @SectionAttempt, @StudentFile,
-                    @CreateDate, @ModifyDate, @CreateBy, @ModifyBy, @Result
-                )
-            END";
+    IF EXISTS (SELECT 1 FROM Activity WHERE ActivityId = @ActivityId)
+    BEGIN
+        UPDATE Activity 
+        SET Status = @Status,
+            SectionAttempt = @SectionAttempt,
+            StudentFile = @StudentFile,
+            ModifyDate = @ModifyDate,
+            ModifyBy = @ModifyBy,
+            Result = @Result
+        WHERE ActivityId = @ActivityId
+    END
+    ELSE
+    BEGIN
+        INSERT INTO Activity (
+            ActivityId, UserId, SimulationId, SectionId, 
+            Status, SectionAttempt, StudentFile, 
+            CreateDate, ModifyDate, CreateBy, ModifyBy, Result
+        )
+        VALUES (
+            @ActivityId, @UserId, @SimulationId, @SectionId,
+            @Status, @SectionAttempt, @StudentFile,
+            @CreateDate, @ModifyDate, @CreateBy, @ModifyBy, @Result
+        )
+    END";
 
             await connection.ExecuteAsync(query, new
             {
@@ -180,10 +192,9 @@ namespace JobSimulation.DAL
                 activity.ModifyDate,
                 activity.CreateBy,
                 activity.ModifyBy,
-                Result = finalResult ?? CalculateDefaultResult(activity.Status)
+                Result = finalResult
             });
         }
-
         private string CalculateDefaultResult(string status)
         {
             return status == StatusTypes.Completed ? "Completed" : null;
@@ -486,30 +497,46 @@ namespace JobSimulation.DAL
         public async Task<string> CalculateActivityResult(string activityId)
         {
             var tasks = await _taskRepository.GetTasksForActivityAsync(activityId);
+            if (tasks == null || !tasks.Any())
+                return StatusTypes.NeedsImprovement;
 
-            using var connection = new SqlConnection(_connectionString);
-            var skillMatrixEntries = await connection.QueryAsync<SkillMatrix>(
-                "SELECT * FROM SkillMatrix WHERE ActivityId = @ActivityId",
-                new { ActivityId = activityId }
-            );
+            var skillMatrixEntries = await _skillMatrixRepository.GetForActivityAsync(activityId);
+            if (skillMatrixEntries == null || !skillMatrixEntries.Any())
+                return StatusTypes.NeedsImprovement;
 
-            var latestStatuses = skillMatrixEntries
-                .GroupBy(sm => sm.TaskId)
-                .ToDictionary(g => g.Key, g => g.OrderByDescending(sm => sm.ModifyDate).First().Status);
+            var taskResults = new List<(int attempt, int hints)>();
 
-            int completedCount = latestStatuses.Count(kv => kv.Value == StatusTypes.Completed);
-            int totalTasks = tasks.Count;
-            double completionRatio = (double)completedCount / totalTasks;
-
-            return completionRatio switch
+            foreach (var task in skillMatrixEntries.GroupBy(sm => sm.TaskId))
             {
-                >= 0.9 => "Mastered",
-                >= 0.7 => "Proficient",
-                >= 0.4 => "Developing",
-                _ => "Needs Improvement"
-            };
-        }
+                var latest = task.OrderByDescending(sm => sm.ModifyDate).First();
+                if (latest.Status == StatusTypes.Completed)
+                {
+                    taskResults.Add((latest.TaskAttempt, latest.HintsChecked));
+                }
+                else
+                {
+                    // Task was never completed successfully
+                    return StatusTypes.NeedsImprovement;
+                }
+            }
 
+            // Determine overall result based on worst performance
+            if (taskResults.Any(r => r.attempt >= 3))
+                return StatusTypes.Developing;
+
+            if (taskResults.Any(r => r.attempt == 2))
+                return taskResults.All(r => r.attempt == 2 && r.hints == 0)
+                    ? StatusTypes.Proficient
+                    : StatusTypes.Developing;
+
+            if (taskResults.All(r => r.attempt == 1 && r.hints == 0))
+                return StatusTypes.Mastered;
+
+            if (taskResults.All(r => r.attempt == 1))
+                return StatusTypes.Proficient;
+
+            return StatusTypes.Developing;
+        }
         public async Task<Activity> GetLatestActivityAsync(string userId, string simulationId, string sectionId)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -527,26 +554,32 @@ namespace JobSimulation.DAL
 
             var newActivityId = await GenerateNewActivityIdAsync(userId, simulationId, sectionId, true);
 
-            // Duplicate the skill matrix entries from the previous activity to the new activity
+            // Duplicate skill matrix entries but reset their status
             await connection.ExecuteAsync(
-                @"INSERT INTO SkillMatrix (ActivityId, TaskId, Status, HintsChecked, TotalTime, AttemptstoSolve, CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt)
-        SELECT @NewActivityId, TaskId, Status, HintsChecked, TotalTime, AttemptstoSolve, CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt
-        FROM SkillMatrix
-        WHERE ActivityId = @PreviousActivityId",
+                @"INSERT INTO SkillMatrix (ActivityId, TaskId, Status, HintsChecked, TotalTime, 
+           AttemptstoSolve, CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt)
+          SELECT @NewActivityId, TaskId, 
+                 CASE WHEN Status = @Completed THEN @Visited ELSE Status END,
+                 HintsChecked, TotalTime, AttemptstoSolve, 
+                 CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt
+          FROM SkillMatrix
+          WHERE ActivityId = @PreviousActivityId",
                 new
                 {
                     NewActivityId = newActivityId,
-                    PreviousActivityId = previousActivity.ActivityId
+                    PreviousActivityId = previousActivity.ActivityId,
+                    Completed = StatusTypes.Completed,
+                    Visited = StatusTypes.Visited
                 });
 
-            // Create the new activity based on the previous activity
+            // Create new activity with NotStarted status
             var newActivity = new Activity
             {
                 ActivityId = newActivityId,
                 UserId = userId,
                 SimulationId = simulationId,
                 SectionId = sectionId,
-                Status = StatusTypes.NotStarted,
+                Status = StatusTypes.NotStarted, // Proper initial status
                 SectionAttempt = previousActivity.SectionAttempt + 1,
                 StudentFile = previousActivity.StudentFile,
                 CreateDate = DateTime.UtcNow,
@@ -559,7 +592,6 @@ namespace JobSimulation.DAL
             await SaveActivityAsync(newActivity);
             return newActivityId;
         }
-
         public async Task<Activity> GetLastActivityForSectionAsync(string userId, string simulationId, string sectionId)
         {
             using var connection = new SqlConnection(_connectionString);
