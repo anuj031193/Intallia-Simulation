@@ -25,10 +25,12 @@ namespace JobSimulation.Forms
         private int currentTaskIndex;
         private int timeElapsed;
         private List<JobTask> tasks;
+        private Section _currentSection;
 
         private readonly SectionRepository _sectionRepository;
         private readonly string _simulationId;
         private readonly string _sectionId;
+        private readonly string _userId; // Add these lines in your class to maintain userId context
 
         public frmSimulationSoftware(
             List<JobTask> tasks,
@@ -53,7 +55,8 @@ namespace JobSimulation.Forms
             this._sectionRepository = sectionRepository;
             this._simulationId = simulationId;
             this._sectionId = sectionId;
-
+            this._userId = userId;
+            this._currentSection = currentSection;
             _simulationManager = new SimulationManager(
                 tasks,
                 filePath,
@@ -119,39 +122,6 @@ namespace JobSimulation.Forms
             OnSectionCompleted(EventArgs.Empty);
         }
 
-        private async void btnNext_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                activityTimer.Stop(); // Pause timer
-                await _simulationManager.SaveProgressAsync();
-                await _simulationManager.MoveToNextTask();
-                await LoadTask(_simulationManager.CurrentTaskIndex);
-                UpdateNavigationButtons();
-                activityTimer.Start(); // Resume only after new task is loaded
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
-
-        private async void btnPrevious_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                activityTimer.Stop(); // Pause timer
-                await _simulationManager.SaveProgressAsync();
-                await _simulationManager.MoveToPreviousTask();
-                await LoadTask(_simulationManager.CurrentTaskIndex);
-                UpdateNavigationButtons();
-                activityTimer.Start(); // Resume only after new task is loaded
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
 
         private void UpdateNavigationButtons()
         {
@@ -159,38 +129,7 @@ namespace JobSimulation.Forms
             btnNext.Enabled = _simulationManager.CurrentTaskIndex < _simulationManager.Tasks.Count - 1;
         }
 
-        private async Task LoadNextSection()
-        {
-            var nextSection = await _simulationManager.GetNextSectionAsync();
-            if (nextSection != null)
-            {
-                await _simulationManager.LoadSectionAsync(nextSection);
-                UpdateUI();
-                CloseFile(_simulationManager.FilePath);
-                await OpenSectionFile(nextSection);
-            }
-            else
-            {
-                MessageBox.Show("Congratulations! You've completed all sections.");
-                Close();
-            }
-        }
-
-        private async Task LoadPreviousSection()
-        {
-            var prevSection = await _simulationManager.GetPreviousSectionAsync();
-            if (prevSection != null)
-            {
-                await _simulationManager.LoadSectionAsync(prevSection);
-                UpdateUI();
-                CloseFile(_simulationManager.FilePath);
-                await OpenSectionFile(prevSection);
-            }
-            else
-            {
-                MessageBox.Show("This is the first section.");
-            }
-        }
+    
 
         private void InitializeComponents()
         {
@@ -290,53 +229,44 @@ namespace JobSimulation.Forms
             }
         }
 
-        private async void btnSaveandNextSession_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                await _simulationManager.SaveAndNextSectionAsync();
-                activityTimer.Start(); // Restart the FORM'S timer here if needed
-                await LoadNextSection();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error saving session: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private async void btnSaveandPreviousSession_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                await _simulationManager.SaveAndPreviousSectionAsync();
-                activityTimer.Start(); // Restart the FORM'S timer here if needed
-                await LoadPreviousSection();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error saving session: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
 
         private void btnSaveAndExit_Click(object sender, EventArgs e)
         {
             Application.Exit();
         }
 
+
         private async void btnStart_Click(object sender, EventArgs e)
         {
             try
             {
-                // Load the latest modified task first
-                currentTaskIndex = _simulationManager.CurrentTaskIndex; // Use the CurrentTaskIndex set by the SimulationManager
-                await LoadTask(currentTaskIndex);
+                // Ensure that tasks have been loaded in the SimulationManager
+                if (_simulationManager.Tasks.Count == 0)
+                {
+                    MessageBox.Show("No tasks to load. Please check the section.");
+                    return;
+                }
+
+                // Load the current task based on the manager's current task index
+                await LoadTask(_simulationManager.CurrentTaskIndex);
+
+                // Set elapsed time based on the simulation manager's current task elapsed time
                 var elapsedTime = _simulationManager.CurrentTaskElapsedTime;
                 SetElapsedTime(elapsedTime);
+
+                // Update the label to indicate the task number
                 label2.Text = $"Task {currentTaskIndex + 1} of {_simulationManager.Tasks.Count}";
 
+                // Notify the user that the process has started
                 MessageBox.Show("Process started!");
-                StartTimers(); // Ensure this starts the timer
+
+                // Start the timer for tracking elapsed time
+                StartTimers();
+
+                // Enable controls for user interaction
                 EnableControls();
+
+                // Disable the start button to prevent multiple starts
                 btnStart.Enabled = false;
             }
             catch (Exception ex)
@@ -344,6 +274,7 @@ namespace JobSimulation.Forms
                 MessageBox.Show($"An error occurred: {ex.Message}");
             }
         }
+
 
         private void EnableControls()
         {
@@ -422,5 +353,123 @@ namespace JobSimulation.Forms
 
             await _simulationManager.ActivityRepository.SaveActivityAsync(newActivity);
         }
+
+
+      
+
+
+        private async void btnNext_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                activityTimer.Stop(); // Pause the timer
+                await _simulationManager.SaveProgressAsync(); // Save current progress
+
+                if (_simulationManager.CurrentTaskIndex < _simulationManager.Tasks.Count - 1) // If not at the last task
+                {
+                    await _simulationManager.MoveToNextTask(); // Move to the next task
+                    await LoadCurrentTask(); // Load the task related to the updated index
+                }
+                else
+                {
+                    await _simulationManager.SaveAndLoadNextSectionAsync();
+                }
+
+                UpdateNavigationButtons(); // Enable/Disable navigation buttons accordingly
+                activityTimer.Start(); // Resume timer after task loading
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}");
+            }
+        }
+
+        private async void btnPrevious_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                activityTimer.Stop(); // Pause the timer
+                await _simulationManager.SaveProgressAsync(); // Save current progress
+
+                await _simulationManager.MoveToPreviousTask(); // Move to the previous task
+                await LoadCurrentTask(); // Load the task after moving
+                UpdateNavigationButtons(); // Enable/Disable navigation buttons accordingly
+
+                activityTimer.Start(); // Resume timer
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}");
+            }
+        }
+
+        private async void btnSaveandNextSession_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                await _simulationManager.SaveProgressAsync(); // Save progress
+                await LoadNextSection(); // Load next section
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving session: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async void btnSaveandPreviousSession_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                await _simulationManager.SaveProgressAsync(); // Save progress
+                await LoadPreviousSection(); // Load previous section
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving session: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // A new method for loading the current task in the simulation manager
+        private async Task LoadCurrentTask()
+        {
+            await LoadTask(_simulationManager.CurrentTaskIndex); // Load task based on current task index
+        }
+
+        // Example function for loading the next section
+        private async Task LoadNextSection()
+        {
+            var nextSection = await _simulationManager.GetNextSectionAsync();
+            if (nextSection != null)
+            {
+                await _simulationManager.LoadSectionAsync(nextSection); // Load the new section
+                UpdateUI(); // Update UI components to reflect the new section's tasks
+
+                // Handle file opening for the section
+                await OpenSectionFile(nextSection); // Assuming it handles file management as needed
+            }
+            else
+            {
+                MessageBox.Show("You've completed all sections. Congratulations!");
+                Close(); // Close form or navigate to a completion screen
+            }
+        }
+
+        // Similar to LoadNextSection, implement LoadPreviousSection
+        private async Task LoadPreviousSection()
+        {
+            var previousSection = await _simulationManager.GetPreviousSectionAsync(_userId, _simulationId, _currentSection.SectionId); // Ensure _currentSection is defined in the current context
+            if (previousSection != null)
+            {
+                await _simulationManager.LoadSectionAsync(previousSection);
+                UpdateUI(); // Update UI components to reflect the new section's tasks
+
+                await OpenSectionFile(previousSection); // Handle file opening logic
+            }
+            else
+            {
+                MessageBox.Show("You are at the first section.");
+            }
+        }
+
     }
 }

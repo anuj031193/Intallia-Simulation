@@ -27,6 +27,7 @@ namespace JobSimulation.Managers
         private readonly FileService _fileService;
         private readonly SkillMatrixRepository _skillMatrixRepository;
         private readonly TaskRepository _taskRepository;
+        private readonly ActivityRepository _activityRepository;
         private readonly SectionService _sectionService;
         private readonly DataSet _progressDataSet;
         private readonly DataTable _progressTable;
@@ -64,6 +65,8 @@ namespace JobSimulation.Managers
             _taskRepository = taskRepository;
             _sectionService = sectionService;
             _progressDataSet = progressDataSet;
+            _activityRepository = activityRepository ?? throw new ArgumentNullException(nameof(activityRepository));
+            _sectionRepository = sectionRepository ?? throw new ArgumentNullException(nameof(sectionRepository));
             _progressTable = _progressDataSet.Tables["SectionProgress"];
             CurrentTaskIndex = 0;
             _currentSection = currentSection;
@@ -178,10 +181,30 @@ namespace JobSimulation.Managers
             return await _sectionService.GetNextSectionAsync(UserId, SimulationId, _currentSection.SectionId);
         }
 
-        public async Task<Section> GetPreviousSectionAsync()
+        public async Task<Section> GetPreviousSectionAsync(string userId, string simulationId, string currentSectionId)
         {
-            return await _sectionService.GetPreviousSectionAsync(UserId, SimulationId, _currentSection.SectionId);
+            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(simulationId) || string.IsNullOrEmpty(currentSectionId))
+            {
+                throw new ArgumentException("User ID, simulation ID, and current section ID cannot be null or empty.");
+            }
+
+            var lastActivity = await _activityRepository.GetLatestActivityAsync(userId, simulationId, currentSectionId);
+            if (lastActivity == null)
+            {
+                Console.WriteLine("No last activity found, cannot load previous section.");
+                return null;
+            }
+
+            var prevSection = await _sectionRepository.GetSectionByIdAsync(lastActivity.SectionId);
+            if (prevSection == null)
+            {
+                Console.WriteLine($"No previous section found for Section ID: {lastActivity.SectionId}");
+                return null; // Or throw an exception
+            }
+
+            return prevSection;
         }
+
 
         public async Task<string> CheckAnswerAsync(int taskIndex)
         {
@@ -192,18 +215,19 @@ namespace JobSimulation.Managers
             int taskAttempt = (existingEntry?.TaskAttempt ?? 0) + 1;
             int attempts = existingEntry?.AttemptstoSolve ?? 0;
 
+            // Only update AttemptsToSolve if this is the first correct answer
             if (isCorrect && existingEntry?.Status != StatusTypes.Completed)
-                attempts = taskAttempt;
-            else if (!isCorrect)
-                attempts++;
+            {
+                attempts = taskAttempt; // Store the current attempt number
+            }
 
             var skillMatrix = new SkillMatrix
             {
                 ActivityId = ActivityId,
                 TaskId = currentTask.TaskId,
-                Status = StatusTypes.Completed, // Always set to Completed
-                AttemptstoSolve = attempts,
-                TaskAttempt = taskAttempt,
+                Status = isCorrect ? StatusTypes.Completed : StatusTypes.InComplete,
+                AttemptstoSolve = attempts, // This now stores the attempt number when first correct
+                TaskAttempt = taskAttempt,  // This increments with every check
                 ModifyBy = UserId,
                 ModifyDate = DateTime.UtcNow,
                 HintsChecked = existingEntry?.HintsChecked ?? 0,
@@ -213,9 +237,8 @@ namespace JobSimulation.Managers
             await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
             await UpdateActivityStatusAsync();
 
-            return isCorrect ? "Correct!" : "Incorrect, but task marked as completed.";
+            return isCorrect ? "Correct!" : "Incorrect, please try again.";
         }
-
         private bool ValidateTask(JobTask task)
         {
             var taskSubmission = new TaskSubmission
@@ -238,18 +261,31 @@ namespace JobSimulation.Managers
                 .GroupBy(e => e.TaskId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.ModifyDate).First().Status);
 
-            double completionRatio = (double)latestStatuses.Count(kv => kv.Value == StatusTypes.Completed) / Tasks.Count;
+            int completedCount = latestStatuses.Count(kv => kv.Value == StatusTypes.Completed);
+            int totalTasks = Tasks.Count;
+            double completionRatio = (double)completedCount / totalTasks;
 
-            string newStatus = completionRatio switch
+            // Determine Status (Section Progress)
+            string newStatus;
+            if (completedCount == totalTasks)
             {
-                1 => StatusTypes.Completed,
-                >= 0.9 => "Mastered",
-                >= 0.7 => "Proficient",
-                >= 0.4 => "Developing",
-                _ => "Needs Improvement"
-            };
+                newStatus = StatusTypes.Completed;
+            }
+            else if (completionRatio >= 0.7)
+            {
+                newStatus = StatusTypes.PartiallyCompleted;
+            }
+            else if (completedCount > 0)
+            {
+                newStatus = StatusTypes.InProgress;
+            }
+            else
+            {
+                newStatus = StatusTypes.NotStarted;
+            }
 
-            string result = await ActivityRepository.CalculateActivityResult(ActivityId);
+            // Calculate Result (Performance)
+            string result = await ActivityRepository.CalculateResultAsync(ActivityId);
 
             await ActivityRepository.UpdateActivityAsync(new Activity
             {
@@ -260,7 +296,6 @@ namespace JobSimulation.Managers
                 ModifyDate = DateTime.UtcNow
             });
         }
-
         public async Task SaveProgressAsync()
         {
             var taskId = Tasks[CurrentTaskIndex].TaskId;
@@ -358,14 +393,22 @@ namespace JobSimulation.Managers
                 await fileStream.ReadAsync(fileBytes, 0, (int)fileStream.Length);
             }
 
-            string calculatedResult = await ActivityRepository.CalculateActivityResult(ActivityId);
+            var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, taskSubmission.Task.TaskId);
+            int attempts = existingEntry?.AttemptstoSolve ?? 0;
+
+            // Only update AttemptsToSolve if this is the first correct answer
+            if (isCorrect && existingEntry?.Status != StatusTypes.Completed)
+            {
+                attempts = taskAttempt;
+            }
+
             var skillMatrix = new SkillMatrix
             {
                 ActivityId = ActivityId,
                 TaskId = taskSubmission.Task.TaskId,
                 HintsChecked = taskSubmission.HintsChecked,
                 TotalTime = _taskElapsedTimes[CurrentTaskIndex],
-                AttemptstoSolve = isCorrect ? taskAttempt : 0,
+                AttemptstoSolve = attempts,
                 Status = isCorrect ? StatusTypes.Completed :
                     (taskSubmission.HintsChecked > 0 || taskAttempt > 0) ?
                         StatusTypes.InComplete :
@@ -376,6 +419,8 @@ namespace JobSimulation.Managers
                 ModifyDate = DateTime.UtcNow,
                 TaskAttempt = taskAttempt
             };
+
+            string calculatedResult = await ActivityRepository.CalculateActivityResult(ActivityId);
 
             await ActivityRepository.SaveActivityAsync(new Activity
             {
@@ -394,37 +439,6 @@ namespace JobSimulation.Managers
             }, calculatedResult);
 
             await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
-        }
-
-        public async Task SaveAndNextSectionAsync()
-        {
-            // Check if any hints were used in this section
-            var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(ActivityId);
-            bool hintsUsed = skillMatrixEntries.Any(e => e.HintsChecked > 0);
-
-            if (await AreAllTasksCompleted(_currentSection.SectionId))
-            {
-                string message = hintsUsed
-                    ? "Retry section to improve your score?"
-                    : "Proceed to next section?";
-
-                var result = MessageBox.Show(message, "Section Complete", MessageBoxButtons.YesNo);
-
-                if (result == DialogResult.Yes && hintsUsed)
-                {
-                    // Reset task statuses for retry
-                    foreach (var entry in skillMatrixEntries)
-                        entry.Status = StatusTypes.Visited;
-                    await _skillMatrixRepository.BatchUpdateSkillMatrixAsync(skillMatrixEntries);
-
-                    // Reload current section
-                    await LoadSectionAsync(_currentSection);
-                }
-                else
-                {
-                    await LoadNextSectionAsync();
-                }
-            }
         }
 
         private async Task SaveTaskProgressAsync(bool isTaskCompleted)
@@ -526,30 +540,10 @@ namespace JobSimulation.Managers
             }
         }
 
-        public async Task MoveToNextTask()
-        {
-            if (CurrentTaskIndex < Tasks.Count - 1)
-            {
-                CurrentTaskIndex++;
-                await SaveCurrentStateAsync();
-            }
-            else
-            {
-                await HandleSectionCompletion();
-            }
-        }
-
-        public async Task MoveToPreviousTask()
-        {
-            if (CurrentTaskIndex > 0)
-            {
-                CurrentTaskIndex--;
-                await SaveCurrentStateAsync();
-            }
-        }
 
    
-                      private async Task HandleSectionCompletion()
+      
+        private async Task HandleSectionCompletion()
         {
             var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(ActivityId);
             var completedCount = skillMatrixEntries.Count(e => e.Status == StatusTypes.Completed);
@@ -567,18 +561,78 @@ namespace JobSimulation.Managers
 
       
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        public async Task MoveToNextTask()
+        {
+            if (CurrentTaskIndex < Tasks.Count - 1)
+            {
+                CurrentTaskIndex++;
+                await SaveCurrentStateAsync();
+                await LoadTaskAsync(CurrentTaskIndex); // Load the current task
+            }
+            else
+            {
+                await HandleSectionCompletion(); // Handle if at last task
+            }
+        }
+
+        public async Task MoveToPreviousTask()
+        {
+            if (CurrentTaskIndex > 0)
+            {
+                CurrentTaskIndex--;
+                await SaveCurrentStateAsync();
+                await LoadTaskAsync(CurrentTaskIndex); // Load the current task
+            }
+        }
+
+        public async Task SaveAndLoadNextSectionAsync()
+        {
+            // Your logic to save progress
+            await SaveProgressAsync();
+
+            // Then move to the next section
+            var nextSection = await GetNextSectionAsync();
+            if (nextSection != null)
+            {
+                await LoadSectionAsync(nextSection);
+            }
+            else
+            {
+                MessageBox.Show("No more sections available.");
+            }
+        }
+
         public async Task SaveAndPreviousSectionAsync()
         {
-            var previousSection = await GetPreviousSectionAsync();
+            // Always save progress
+            await SaveProgressAsync();
+
+            // Get the previous section using the SectionService with the stored userId and simulationId
+            var previousSection = await _sectionService.GetPreviousSectionAsync(UserId, SimulationId, _currentSection.SectionId);
+
             if (previousSection != null)
             {
-                await SaveProgressAsync();
-                await LoadSectionAsync(previousSection);
+                await LoadSectionAsync(previousSection); // Load the previous section
             }
             else
             {
                 MessageBox.Show("This is the first section.");
             }
         }
+
     }
 }

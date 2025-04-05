@@ -94,22 +94,26 @@ namespace JobSimulation.BLL
 
         public async Task<Section> GetPreviousSectionAsync(string userId, string simulationId, string currentSectionId)
         {
-            var lastActivity = await _activityRepository.GetLatestActivityAsync(userId, simulationId, currentSectionId);
-            if (lastActivity != null)
+            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(simulationId) || string.IsNullOrEmpty(currentSectionId))
             {
-                var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
-                if (prevSection != null)
-                {
-                    if (lastActivity.Status == StatusTypes.Completed)
-                    {
-                        // Offer retry option
-                        // Implement your retry logic here, for example:
-                        // ShowRetryOption(prevSection, lastActivity);
-                    }
-                    return prevSection;
-                }
+                throw new ArgumentException("User ID, simulation ID, and current section ID cannot be null or empty.");
             }
-            return null;
+
+            var lastActivity = await _activityRepository.GetLatestActivityAsync(userId, simulationId, currentSectionId);
+            if (lastActivity == null)
+            {
+                Console.WriteLine("No last activity found, cannot load previous section.");
+                return null;
+            }
+
+            var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
+            if (prevSection == null)
+            {
+                Console.WriteLine($"No previous section found for Section ID: {lastActivity.SectionId}");
+                return null; // Or throw an exception
+            }
+
+            return prevSection;
         }
         public async Task<Section> LoadPreviousSectionAsync(string userId, string simulationId, string currentSectionId)
         {
