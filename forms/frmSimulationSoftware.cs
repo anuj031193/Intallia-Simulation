@@ -1,8 +1,6 @@
 ﻿using System;
 using Microsoft.Data.SqlClient;
-
 using System.Data;
-
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -22,7 +20,7 @@ namespace JobSimulation.Forms
     {
         public event EventHandler<SectionNavigationAction> NavigateToSection;
         private readonly SimulationManager _simulationManager;
-        private System.Windows.Forms.Timer activityTimer;
+        private Timer activityTimer;
         public event EventHandler SectionCompleted;
         private bool _allTasksCompleted = false;
         private bool _isLastSection = false;
@@ -80,22 +78,26 @@ namespace JobSimulation.Forms
                 progressDataSet,
                 attempt,
                 currentSection);
-          
+
             InitializeComponent();
             InitializeComponents();
             InitializeDynamicUI();
             LoadMasterData();
         }
+
         private void InitializeDynamicUI()
         {
             btnCompleteSimulation.Visible = false;
             btnSaveandNextSession.Visible = true;
+            btnStart.Enabled = true;
+            btnStart.Visible = true;
         }
+
         private async Task RetryCurrentSection()
         {
             await _simulationManager.SaveProgressAsync();
             NavigateToSection?.Invoke(this, SectionNavigationAction.Retry);
-            this.Close();
+            Close();
         }
 
         private async Task CheckTaskCompletion()
@@ -104,7 +106,6 @@ namespace JobSimulation.Forms
 
             if (_allTasksCompleted)
             {
-                // Show retry option if not last section
                 if (!_isLastSection)
                 {
                     var result = MessageBox.Show(
@@ -119,7 +120,6 @@ namespace JobSimulation.Forms
                     }
                 }
 
-                // Enable complete button if last section
                 if (_isLastSection)
                 {
                     btnCompleteSimulation.Visible = true;
@@ -127,6 +127,7 @@ namespace JobSimulation.Forms
                 }
             }
         }
+
         private async void frmSimulationSoftware_Load(object sender, EventArgs e)
         {
             var nextSection = await _sectionRepository.GetNextSectionAsync(_simulationId, _sectionId);
@@ -141,7 +142,6 @@ namespace JobSimulation.Forms
             if (taskIndex >= 0 && taskIndex < tasks.Count)
             {
                 currentTaskIndex = taskIndex;
-                // LoadTask(currentTaskIndex);
             }
         }
 
@@ -168,7 +168,7 @@ namespace JobSimulation.Forms
 
         private void InitializeUI()
         {
-            lblTimer.Visible = false; // Hide timer initially
+            lblTimer.Visible = false;
             btnPrevious.Enabled = _simulationManager.CurrentTaskIndex > 0;
             btnNext.Enabled = _simulationManager.CurrentTaskIndex < _simulationManager.Tasks.Count - 1;
         }
@@ -205,7 +205,6 @@ namespace JobSimulation.Forms
             label1.Visible = true;
             label2.Text = $"Task {taskIndex + 1} of {_simulationManager.Tasks.Count}";
 
-            // Show timer only after task is loaded
             lblTimer.Visible = true;
             lblTimer.Text = $"Time: {_simulationManager.CurrentTaskElapsedTime} sec";
         }
@@ -227,7 +226,7 @@ namespace JobSimulation.Forms
         private async void Timer_Tick(object sender, EventArgs e)
         {
             await _simulationManager.IncrementTimeElapsedAsync();
-            lblTimer.Text = $"Time: {_simulationManager.CurrentTaskElapsedTime} sec"; // Use CurrentTaskElapsedTime
+            lblTimer.Text = $"Time: {_simulationManager.CurrentTaskElapsedTime} sec";
         }
 
         private async void AutosaveTimer_Tick(object sender, EventArgs e)
@@ -265,33 +264,21 @@ namespace JobSimulation.Forms
         {
             try
             {
-                // Ensure that tasks have been loaded in the SimulationManager
                 if (_simulationManager.Tasks.Count == 0)
                 {
                     MessageBox.Show("No tasks to load. Please check the section.");
                     return;
                 }
 
-                // Load the current task based on the manager's current task index
                 await LoadTask(_simulationManager.CurrentTaskIndex);
-
-                // Set elapsed time based on the simulation manager's current task elapsed time
-                var elapsedTime = _simulationManager.CurrentTaskElapsedTime;
-                SetElapsedTime(elapsedTime);
-
-                // Update the label to indicate the task number
+                SetElapsedTime(_simulationManager.CurrentTaskElapsedTime);
                 label2.Text = $"Task {currentTaskIndex + 1} of {_simulationManager.Tasks.Count}";
 
-                // Notify the user that the process has started
                 MessageBox.Show("Process started!");
 
-                // Start the timer for tracking elapsed time
                 StartTimers();
-
-                // Enable controls for user interaction
                 EnableControls();
 
-                // Disable the start button to prevent multiple starts
                 btnStart.Enabled = false;
             }
             catch (Exception ex)
@@ -308,10 +295,14 @@ namespace JobSimulation.Forms
             btnHint.Enabled = true;
         }
 
+        private async Task LoadCurrentTask()
+        {
+            await LoadTask(_simulationManager.CurrentTaskIndex);
+        }
+
         private void UpdateUI()
         {
             InitializeUI();
-            // LoadTask(_simulationManager.CurrentTaskIndex);
         }
 
         private void CloseFile(string filePath)
@@ -382,21 +373,21 @@ namespace JobSimulation.Forms
         {
             try
             {
-                activityTimer.Stop(); // Pause the timer
-                await _simulationManager.SaveProgressAsync(); // Save current progress
+                activityTimer.Stop();
+                await _simulationManager.SaveProgressAsync();
 
-                if (_simulationManager.CurrentTaskIndex < _simulationManager.Tasks.Count - 1) // If not at the last task
+                if (_simulationManager.CurrentTaskIndex < _simulationManager.Tasks.Count - 1)
                 {
-                    await _simulationManager.MoveToNextTask(); // Move to the next task
-                    await LoadCurrentTask(); // Load the task related to the updated index
+                    await _simulationManager.MoveToNextTask();
+                    await LoadCurrentTask();
                 }
                 else
                 {
-                    await _simulationManager.SaveAndLoadNextSectionAsync();
+                    //await _simulationManager.SaveAndLoadNextSectionAsync();
                 }
 
-                UpdateNavigationButtons(); // Enable/Disable navigation buttons accordingly
-                activityTimer.Start(); // Resume timer after task loading
+                UpdateNavigationButtons();
+                activityTimer.Start();
             }
             catch (Exception ex)
             {
@@ -408,14 +399,14 @@ namespace JobSimulation.Forms
         {
             try
             {
-                activityTimer.Stop(); // Pause the timer
-                await _simulationManager.SaveProgressAsync(); // Save current progress
+                activityTimer.Stop();
+                await _simulationManager.SaveProgressAsync();
 
-                await _simulationManager.MoveToPreviousTask(); // Move to the previous task
-                await LoadCurrentTask(); // Load the task after moving
-                UpdateNavigationButtons(); // Enable/Disable navigation buttons accordingly
+                await _simulationManager.MoveToPreviousTask();
+                await LoadCurrentTask();
+                UpdateNavigationButtons();
 
-                activityTimer.Start(); // Resume timer
+                activityTimer.Start();
             }
             catch (Exception ex)
             {
@@ -430,14 +421,15 @@ namespace JobSimulation.Forms
             if (_allTasksCompleted || await CheckForceMoveToNextSection())
             {
                 NavigateToSection?.Invoke(this, SectionNavigationAction.Next);
-                this.Close();
+                Close();
             }
         }
+
         private async void btnSaveandPreviousSession_Click(object sender, EventArgs e)
         {
             await _simulationManager.SaveProgressAsync();
             NavigateToSection?.Invoke(this, SectionNavigationAction.Previous);
-            this.Close();
+            Close();
         }
 
         private async Task<bool> CheckForceMoveToNextSection()
@@ -448,10 +440,6 @@ namespace JobSimulation.Forms
                 MessageBoxButtons.YesNo);
 
             return result == DialogResult.Yes;
-        }        // A new method for loading the current task in the simulation manager
-        private async Task LoadCurrentTask()
-        {
-            await LoadTask(_simulationManager.CurrentTaskIndex); // Load task based on current task index
         }
 
         private async void btnCompleteSimulation_Click(object sender, EventArgs e)
@@ -466,5 +454,65 @@ namespace JobSimulation.Forms
             MessageBox.Show("Congratulations! You've completed the entire simulation.");
             Application.Exit();
         }
+        public void UpdateSectionData(
+        List<JobTask> newTasks,
+        string newFilePath,
+        string newSectionId,
+        string newSoftwareId,
+        string newActivityId,
+        bool newIsLastSection,
+        Section newCurrentSection,
+        int newAttempt)
+        {
+            // Update the simulation manager with new data
+            _simulationManager.UpdateSectionData(
+                newTasks,
+                newFilePath,
+                newSectionId,
+                newSoftwareId,
+                newActivityId,
+                newAttempt,
+                newCurrentSection);
+
+            // Update local fields
+            tasks = newTasks;
+            _sectionId = newSectionId;
+            _currentSection = newCurrentSection;
+            _isLastSection = newIsLastSection;
+
+            // Reset UI state
+            btnCompleteSimulation.Visible = false;
+            btnSaveandNextSession.Visible = true;
+            btnStart.Enabled = true;
+            btnStart.Visible = true;
+
+            // Reset task display
+            label1.Text = string.Empty;
+            label2.Text = string.Empty;
+            lblTimer.Text = "Time: 0 sec";
+
+            // Disable controls until user starts the section
+            DisableControls();
+        }
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // Save current state before closing
+            _ = _simulationManager.SaveProgressAsync();
+            base.OnFormClosing(e);
+        }
+        private void frmSimulationSoftware_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            // Clean up any open files
+            if (!string.IsNullOrEmpty(_simulationManager?.FilePath))
+            {
+                CloseFile(_simulationManager.FilePath);
+            }
+
+            // Stop and dispose timers
+            activityTimer?.Stop();
+            activityTimer?.Dispose();
+        }
+
+
     }
 }

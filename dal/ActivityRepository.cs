@@ -540,6 +540,29 @@ namespace JobSimulation.DAL
                 "SELECT TOP 1 * FROM Activity WHERE UserId = @UserId AND SimulationId = @SimulationId AND SectionId = @SectionId ORDER BY ModifyDate DESC",
                 new { UserId = userId, SimulationId = simulationId, SectionId = sectionId });
         }
+        public async Task<Activity> GetPreviousActivityAsync(string userId, string simulationId, string currentSectionId)
+        {
+            try
+            {
+                using var connection = new SqlConnection(_connectionString);
+                return await connection.QueryFirstOrDefaultAsync<Activity>(@"
+         SELECT TOP 1 * 
+         FROM Activity 
+         WHERE UserId = @UserId 
+           AND SimulationId = @SimulationId 
+           AND SectionId != @SectionId 
+         ORDER BY ModifyDate DESC",
+                     new { UserId = userId, SimulationId = simulationId, SectionId = currentSectionId });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error occurred: {ex.Message}");
+                MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                // Handle the error, perhaps log it, or take corrective actions to prevent form closure.
+                return null;  // Ensure no further action triggers the form to close
+            }
+
+        }
 
         public async Task<string> CreateRetryActivityAsync(string userId, string simulationId, string sectionId)
         {

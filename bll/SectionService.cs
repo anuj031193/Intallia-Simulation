@@ -99,40 +99,36 @@ namespace JobSimulation.BLL
                 throw new ArgumentException("User ID, simulation ID, and current section ID cannot be null or empty.");
             }
 
-            var lastActivity = await _activityRepository.GetLatestActivityAsync(userId, simulationId, currentSectionId);
-            if (lastActivity == null)
+            try
             {
-                Console.WriteLine("No last activity found, cannot load previous section.");
-                return null;
-            }
+                // Check for previous activity before continuing
+                var lastActivity = await _activityRepository.GetPreviousActivityAsync(userId, simulationId, currentSectionId);
 
-            var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
-            if (prevSection == null)
-            {
-                Console.WriteLine($"No previous section found for Section ID: {lastActivity.SectionId}");
-                return null; // Or throw an exception
-            }
-
-            return prevSection;
-        }
-        public async Task<Section> LoadPreviousSectionAsync(string userId, string simulationId, string currentSectionId)
-        {
-            var lastActivity = await _activityRepository.GetLatestActivityAsync(userId, simulationId, currentSectionId);
-            if (lastActivity != null)
-            {
-                var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
-                if (prevSection != null)
+                if (lastActivity == null)
                 {
-                    if (lastActivity.Status == StatusTypes.Completed)
-                    {
-                        // Offer retry option
-                        // Implement your retry logic here, for example:
-                        // ShowRetryOption(prevSection, lastActivity);
-                    }
-                    return prevSection;
+                    // Log the message and exit early without closing the form
+                    Console.WriteLine("No previous activity found, cannot load previous section.");
+                    MessageBox.Show("No previous activity found, cannot load previous section.");
+                    return null;  // Early return to avoid further processing that could lead to form closing
                 }
+
+                // Proceed with fetching the previous section if the activity exists
+                var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
+                if (prevSection == null)
+                {
+                    Console.WriteLine($"No previous section found for Section ID: {lastActivity.SectionId}");
+                    return null;  // Return null if no previous section is found, preventing form closure
+                }
+
+                return prevSection; // Return the previous section if found
             }
-            return null;
+            catch (Exception ex)
+            {
+                // Log any exceptions to avoid form crash
+                Console.WriteLine($"Error fetching previous section: {ex.Message}");
+                MessageBox.Show($"An error occurred while fetching the previous section: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;  // Return null to prevent unwanted side effects
+            }
         }
         public async Task<bool> ValidateSectionCompletion(string userId, string sectionId)
         {

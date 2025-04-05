@@ -224,34 +224,7 @@ namespace JobSimulation.Managers
             await SaveProgressAsync();
         }
 
-        public async Task<Section> GetNextSectionAsync()
-        {
-            return await _sectionService.GetNextSectionAsync(UserId, SimulationId, _currentSection.SectionId);
-        }
 
-        public async Task<Section> GetPreviousSectionAsync(string userId, string simulationId, string currentSectionId)
-        {
-            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(simulationId) || string.IsNullOrEmpty(currentSectionId))
-            {
-                throw new ArgumentException("User ID, simulation ID, and current section ID cannot be null or empty.");
-            }
-
-            var lastActivity = await _activityRepository.GetLatestActivityAsync(userId, simulationId, currentSectionId);
-            if (lastActivity == null)
-            {
-                Console.WriteLine("No last activity found, cannot load previous section.");
-                return null;
-            }
-
-            var prevSection = await _sectionRepository.GetSectionByIdAsync(lastActivity.SectionId);
-            if (prevSection == null)
-            {
-                Console.WriteLine($"No previous section found for Section ID: {lastActivity.SectionId}");
-                return null; // Or throw an exception
-            }
-
-            return prevSection;
-        }
 
         public async Task<string> CheckAnswerAsync(int taskIndex)
         {
@@ -570,18 +543,6 @@ namespace JobSimulation.Managers
             await UpdateActivityStatusAsync();
         }
 
-        private async Task LoadNextSectionAsync()
-        {
-            var nextSection = await GetNextSectionAsync();
-            if (nextSection != null)
-            {
-                await LoadSectionAsync(nextSection);
-            }
-            else
-            {
-                MessageBox.Show("No more sections available.");
-            }
-        }
 
 
         private void CloseFile(string filePath)
@@ -652,40 +613,33 @@ namespace JobSimulation.Managers
             }
         }
 
-        public async Task SaveAndLoadNextSectionAsync()
+        public void UpdateSectionData(
+      List<JobTask> newTasks,
+      string newFilePath,
+      string newSectionId,
+      string newSoftwareId,
+      string newActivityId,
+      int newAttempt,
+      Section newCurrentSection)
         {
-            // Your logic to save progress
-            await SaveProgressAsync();
+            Tasks = newTasks;
+            FilePath = newFilePath;
+            SectionId = newSectionId;
+            SoftwareId = newSoftwareId;
+            ActivityId = newActivityId;
+            Attempt = newAttempt;
+            CurrentSection = newCurrentSection;
 
-            // Then move to the next section
-            var nextSection = await GetNextSectionAsync();
-            if (nextSection != null)
+            // Reset task tracking
+            CurrentTaskIndex = 0;
+            _taskElapsedTimes = new Dictionary<int, int>();
+            for (int i = 0; i < Tasks.Count; i++)
             {
-                await LoadSectionAsync(nextSection);
-            }
-            else
-            {
-                MessageBox.Show("No more sections available.");
+                _taskElapsedTimes[i] = 0;
             }
         }
 
-        public async Task SaveAndPreviousSectionAsync()
-        {
-            // Always save progress
-            await SaveProgressAsync();
 
-            // Get the previous section using the SectionService with the stored userId and simulationId
-            var previousSection = await _sectionService.GetPreviousSectionAsync(UserId, SimulationId, _currentSection.SectionId);
-
-            if (previousSection != null)
-            {
-                await LoadSectionAsync(previousSection); // Load the previous section
-            }
-            else
-            {
-                MessageBox.Show("This is the first section.");
-            }
-        }
 
     }
 }

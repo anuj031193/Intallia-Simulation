@@ -267,9 +267,9 @@ namespace JobSimulation.Forms
             btnSaveandExit.Name = "btnSaveandExit";
             btnSaveandExit.UseVisualStyleBackColor = false;
             btnSaveandExit.Click += btnSaveAndExit_Click;
-
-
-            //btnCompleteSimulation
+            // 
+            // btnCompleteSimulation
+            // 
             btnCompleteSimulation.BackColor = Color.Silver;
             resources.ApplyResources(btnCompleteSimulation, "btnCompleteSimulation");
             btnCompleteSimulation.Name = "btnCompleteSimulation";

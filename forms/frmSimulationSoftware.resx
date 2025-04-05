@@ -152,7 +152,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;label1.ZOrder" xml:space="preserve">
-    <value>30</value>
+    <value>31</value>
   </data>
   <data name="label2.Font" type="System.Drawing.Font, System.Drawing">
     <value>Microsoft Sans Serif, 12pt, style=Bold</value>
@@ -188,7 +188,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;label2.ZOrder" xml:space="preserve">
-    <value>28</value>
+    <value>29</value>
   </data>
   <data name="label3.AutoSize" type="System.Boolean, mscorlib">
     <value>True</value>
@@ -221,7 +221,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;label3.ZOrder" xml:space="preserve">
-    <value>27</value>
+    <value>28</value>
   </data>
   <data name="btnPrevious.Enabled" type="System.Boolean, mscorlib">
     <value>False</value>
@@ -233,13 +233,13 @@
     <value>NoControl</value>
   </data>
   <data name="btnPrevious.Location" type="System.Drawing.Point, System.Drawing">
-    <value>3, 290</value>
+    <value>10, 332</value>
   </data>
   <data name="btnPrevious.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>4, 5, 4, 5</value>
   </data>
   <data name="btnPrevious.Size" type="System.Drawing.Size, System.Drawing">
-    <value>118, 55</value>
+    <value>74, 31</value>
   </data>
   <data name="btnPrevious.TabIndex" type="System.Int32, mscorlib">
     <value>4</value>
@@ -257,7 +257,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;btnPrevious.ZOrder" xml:space="preserve">
-    <value>26</value>
+    <value>27</value>
   </data>
   <data name="btnNext.Enabled" type="System.Boolean, mscorlib">
     <value>False</value>
@@ -269,13 +269,13 @@
     <value>NoControl</value>
   </data>
   <data name="btnNext.Location" type="System.Drawing.Point, System.Drawing">
-    <value>219, 290</value>
+    <value>260, 332</value>
   </data>
   <data name="btnNext.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>4, 5, 4, 5</value>
   </data>
   <data name="btnNext.Size" type="System.Drawing.Size, System.Drawing">
-    <value>119, 55</value>
+    <value>76, 31</value>
   </data>
   <data name="btnNext.TabIndex" type="System.Int32, mscorlib">
     <value>5</value>
@@ -293,7 +293,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;btnNext.ZOrder" xml:space="preserve">
-    <value>25</value>
+    <value>26</value>
   </data>
   <data name="progressBar1.ImeMode" type="System.Windows.Forms.ImeMode, System.Windows.Forms">
     <value>NoControl</value>
@@ -320,7 +320,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;progressBar1.ZOrder" xml:space="preserve">
-    <value>24</value>
+    <value>25</value>
   </data>
   <data name="button4.Font" type="System.Drawing.Font, System.Drawing">
     <value>Times New Roman, 12pt, style=Bold</value>
@@ -356,7 +356,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;button4.ZOrder" xml:space="preserve">
-    <value>23</value>
+    <value>24</value>
   </data>
   <data name="ddlTestSheet.Location" type="System.Drawing.Point, System.Drawing">
     <value>3, 573</value>
@@ -377,7 +377,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;ddlTestSheet.ZOrder" xml:space="preserve">
-    <value>22</value>
+    <value>23</value>
   </data>
   <data name="txtTimer.Location" type="System.Drawing.Point, System.Drawing">
     <value>324, 642</value>
@@ -404,7 +404,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;txtTimer.ZOrder" xml:space="preserve">
-    <value>21</value>
+    <value>22</value>
   </data>
   <data name="label8.AutoSize" type="System.Boolean, mscorlib">
     <value>True</value>
@@ -440,7 +440,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;label8.ZOrder" xml:space="preserve">
-    <value>20</value>
+    <value>21</value>
   </data>
   <data name="label9.AutoSize" type="System.Boolean, mscorlib">
     <value>True</value>
@@ -476,7 +476,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;label9.ZOrder" xml:space="preserve">
-    <value>19</value>
+    <value>20</value>
   </data>
   <data name="txtFileName.Location" type="System.Drawing.Point, System.Drawing">
     <value>819, 760</value>
@@ -503,7 +503,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;txtFileName.ZOrder" xml:space="preserve">
-    <value>18</value>
+    <value>19</value>
   </data>
   <data name="lblTimer.AutoSize" type="System.Boolean, mscorlib">
     <value>True</value>
@@ -539,7 +539,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;lblTimer.ZOrder" xml:space="preserve">
-    <value>17</value>
+    <value>18</value>
   </data>
   <data name="dataGridView1.Location" type="System.Drawing.Point, System.Drawing">
     <value>312, 700</value>
@@ -569,7 +569,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;dataGridView1.ZOrder" xml:space="preserve">
-    <value>16</value>
+    <value>17</value>
   </data>
   <data name="dataGridView2.Location" type="System.Drawing.Point, System.Drawing">
     <value>312, 775</value>
@@ -599,7 +599,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;dataGridView2.ZOrder" xml:space="preserve">
-    <value>15</value>
+    <value>16</value>
   </data>
   <data name="dataGridView3.Location" type="System.Drawing.Point, System.Drawing">
     <value>312, 751</value>
@@ -629,7 +629,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;dataGridView3.ZOrder" xml:space="preserve">
-    <value>14</value>
+    <value>15</value>
   </data>
   <data name="button5.Font" type="System.Drawing.Font, System.Drawing">
     <value>Times New Roman, 12pt, style=Bold</value>
@@ -665,7 +665,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;button5.ZOrder" xml:space="preserve">
-    <value>11</value>
+    <value>12</value>
   </data>
   <data name="button6.Font" type="System.Drawing.Font, System.Drawing">
     <value>Times New Roman, 12pt, style=Bold</value>
@@ -701,7 +701,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;button6.ZOrder" xml:space="preserve">
-    <value>12</value>
+    <value>13</value>
   </data>
   <data name="button7.Font" type="System.Drawing.Font, System.Drawing">
     <value>Times New Roman, 12pt, style=Bold</value>
@@ -737,25 +737,25 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;button7.ZOrder" xml:space="preserve">
-    <value>13</value>
+    <value>14</value>
   </data>
   <data name="btnCheckAnswer.Enabled" type="System.Boolean, mscorlib">
     <value>False</value>
   </data>
   <data name="btnCheckAnswer.Font" type="System.Drawing.Font, System.Drawing">
-    <value>Times New Roman, 12pt, style=Bold</value>
+    <value>Times New Roman, 10.8pt, style=Bold</value>
   </data>
   <data name="btnCheckAnswer.ImeMode" type="System.Windows.Forms.ImeMode, System.Windows.Forms">
     <value>NoControl</value>
   </data>
   <data name="btnCheckAnswer.Location" type="System.Drawing.Point, System.Drawing">
-    <value>87, 378</value>
+    <value>103, 350</value>
   </data>
   <data name="btnCheckAnswer.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>4, 5, 4, 5</value>
   </data>
   <data name="btnCheckAnswer.Size" type="System.Drawing.Size, System.Drawing">
-    <value>148, 48</value>
+    <value>132, 48</value>
   </data>
   <data name="btnCheckAnswer.TabIndex" type="System.Int32, mscorlib">
     <value>29</value>
@@ -773,7 +773,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;btnCheckAnswer.ZOrder" xml:space="preserve">
-    <value>10</value>
+    <value>11</value>
   </data>
   <data name="btnClose.Font" type="System.Drawing.Font, System.Drawing">
     <value>Times New Roman, 12pt, style=Bold</value>
@@ -806,7 +806,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;btnClose.ZOrder" xml:space="preserve">
-    <value>9</value>
+    <value>10</value>
   </data>
   <data name="button9.Font" type="System.Drawing.Font, System.Drawing">
     <value>Times New Roman, 12pt, style=Bold</value>
@@ -842,7 +842,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;button9.ZOrder" xml:space="preserve">
-    <value>8</value>
+    <value>9</value>
   </data>
   <data name="lblArrow.AutoSize" type="System.Boolean, mscorlib">
     <value>True</value>
@@ -869,25 +869,25 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;lblArrow.ZOrder" xml:space="preserve">
-    <value>7</value>
+    <value>8</value>
   </data>
   <data name="btnHint.Font" type="System.Drawing.Font, System.Drawing">
-    <value>Times New Roman, 12pt, style=Bold</value>
+    <value>Times New Roman, 10.8pt, style=Bold</value>
   </data>
   <data name="btnHint.ImeMode" type="System.Windows.Forms.ImeMode, System.Windows.Forms">
     <value>NoControl</value>
   </data>
   <data name="btnHint.Location" type="System.Drawing.Point, System.Drawing">
-    <value>87, 448</value>
+    <value>125, 420</value>
   </data>
   <data name="btnHint.Size" type="System.Drawing.Size, System.Drawing">
-    <value>148, 41</value>
+    <value>97, 48</value>
   </data>
   <data name="btnHint.TabIndex" type="System.Int32, mscorlib">
     <value>39</value>
   </data>
   <data name="btnHint.Text" xml:space="preserve">
-    <value>Reveal Hint ?? </value>
+    <value>Reveal Hint</value>
   </data>
   <data name="&gt;&gt;btnHint.Name" xml:space="preserve">
     <value>btnHint</value>
@@ -899,7 +899,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;btnHint.ZOrder" xml:space="preserve">
-    <value>29</value>
+    <value>30</value>
   </data>
   <data name="btnStart.Font" type="System.Drawing.Font, System.Drawing">
     <value>Times New Roman, 12pt, style=Bold</value>
@@ -932,7 +932,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;btnStart.ZOrder" xml:space="preserve">
-    <value>6</value>
+    <value>7</value>
   </data>
   <data name="StartCell.Location" type="System.Drawing.Point, System.Drawing">
     <value>3, 574</value>
@@ -953,7 +953,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;StartCell.ZOrder" xml:space="preserve">
-    <value>5</value>
+    <value>6</value>
   </data>
   <data name="EndCell.Location" type="System.Drawing.Point, System.Drawing">
     <value>3, 574</value>
@@ -974,7 +974,7 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;EndCell.ZOrder" xml:space="preserve">
-    <value>4</value>
+    <value>5</value>
   </data>
   <data name="lblHint.Location" type="System.Drawing.Point, System.Drawing">
     <value>10, 364</value>
@@ -995,16 +995,16 @@
     <value>$this</value>
   </data>
   <data name="&gt;&gt;lblHint.ZOrder" xml:space="preserve">
-    <value>3</value>
+    <value>4</value>
   </data>
   <data name="btnSaveandNextSession.Font" type="System.Drawing.Font, System.Drawing">
-    <value>Times New Roman, 12pt, style=Bold</value>
+    <value>Times New Roman, 10.8pt, style=Bold</value>
   </data>
   <data name="btnSaveandNextSession.Location" type="System.Drawing.Point, System.Drawing">
-    <value>122, 510</value>
+    <value>246, 371</value>
   </data>
   <data name="btnSaveandNextSession.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 91</value>
+    <value>90, 108</value>
   </data>
   <data name="btnSaveandNextSession.TabIndex" type="System.Int32, mscorlib">
     <value>1</value>
@@ -1025,13 +1025,13 @@
     <value>1</value>
   </data>
   <data name="btnSaveandPreviousSession.Font" type="System.Drawing.Font, System.Drawing">
-    <value>Times New Roman, 12pt, style=Bold</value>
+    <value>Times New Roman, 10.8pt, style=Bold</value>
   </data>
   <data name="btnSaveandPreviousSession.Location" type="System.Drawing.Point, System.Drawing">
-    <value>3, 511</value>
+    <value>3, 371</value>
   </data>
   <data name="btnSaveandPreviousSession.Size" type="System.Drawing.Size, System.Drawing">
-    <value>100, 91</value>
+    <value>92, 101</value>
   </data>
   <data name="btnSaveandPreviousSession.TabIndex" type="System.Int32, mscorlib">
     <value>2</value>
@@ -1052,13 +1052,13 @@
     <value>2</value>
   </data>
   <data name="btnSaveandExit.Font" type="System.Drawing.Font, System.Drawing">
-    <value>Times New Roman, 12pt, style=Bold</value>
+    <value>Times New Roman, 10.8pt, style=Bold</value>
   </data>
   <data name="btnSaveandExit.Location" type="System.Drawing.Point, System.Drawing">
-    <value>246, 511</value>
+    <value>219, 492</value>
   </data>
   <data name="btnSaveandExit.Size" type="System.Drawing.Size, System.Drawing">
-    <value>104, 91</value>
+    <value>104, 72</value>
   </data>
   <data name="btnSaveandExit.TabIndex" type="System.Int32, mscorlib">
     <value>0</value>
@@ -1077,6 +1077,33 @@
   </data>
   <data name="&gt;&gt;btnSaveandExit.ZOrder" xml:space="preserve">
     <value>0</value>
+  </data>
+  <data name="btnCompleteSimulation.Font" type="System.Drawing.Font, System.Drawing">
+    <value>Times New Roman, 10.8pt, style=Bold</value>
+  </data>
+  <data name="btnCompleteSimulation.Location" type="System.Drawing.Point, System.Drawing">
+    <value>3, 496</value>
+  </data>
+  <data name="btnCompleteSimulation.Size" type="System.Drawing.Size, System.Drawing">
+    <value>103, 72</value>
+  </data>
+  <data name="btnCompleteSimulation.TabIndex" type="System.Int32, mscorlib">
+    <value>3</value>
+  </data>
+  <data name="btnCompleteSimulation.Text" xml:space="preserve">
+    <value>Complete Simulation</value>
+  </data>
+  <data name="&gt;&gt;btnCompleteSimulation.Name" xml:space="preserve">
+    <value>btnCompleteSimulation</value>
+  </data>
+  <data name="&gt;&gt;btnCompleteSimulation.Type" xml:space="preserve">
+    <value>System.Windows.Forms.Button, System.Windows.Forms, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="&gt;&gt;btnCompleteSimulation.Parent" xml:space="preserve">
+    <value>$this</value>
+  </data>
+  <data name="&gt;&gt;btnCompleteSimulation.ZOrder" xml:space="preserve">
+    <value>3</value>
   </data>
   <metadata name="$this.Localizable" type="System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089">
     <value>True</value>
