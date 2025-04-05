@@ -244,7 +244,32 @@ namespace JobSimulation.DAL
 
             await command.ExecuteNonQueryAsync();
         }
+        public async Task<Section> GetPreviousSectionByOrderAsync(string simulationId, int currentOrder)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
 
+            var query = "SELECT TOP 1 * FROM Section WHERE SimulationId = @SimulationId AND [Order] < @CurrentOrder ORDER BY [Order] DESC";
+            using var command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@SimulationId", simulationId);
+            command.Parameters.AddWithValue("@CurrentOrder", currentOrder);
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                return new Section
+                {
+                    SectionId = reader["SectionId"].ToString(),
+                    Title = reader["Title"].ToString(),
+                    SoftwareId = reader["SoftwareId"].ToString(),
+                    Order = Convert.ToInt32(reader["Order"]),
+                    StudentFile = reader["StudentFile"].ToString(),
+                    SimulationId = reader["SimulationId"].ToString()
+                };
+            }
+
+            return null;
+        }
         public async Task<List<Section>> GetAllSectionsBySimulationIdAsync(string simulationId)
         {
             var sections = new List<Section>();

@@ -259,47 +259,18 @@ namespace JobSimulation.DAL
             {
                 using var connection = new SqlConnection(_connectionString);
                 await connection.OpenAsync();
-                Debug.WriteLine("Database connection opened successfully.");
 
                 var query = "SELECT TOP 1 * FROM Activity WHERE UserId = @UserId ORDER BY ModifyDate DESC";
-                using var command = new SqlCommand(query, connection);
-                command.Parameters.AddWithValue("@UserId", userId);
-                command.CommandTimeout = 30;
-                Debug.WriteLine("SQL command prepared successfully.");
+                var activity = await connection.QueryFirstOrDefaultAsync<Activity>(query, new { UserId = userId });
 
-                using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
-                Debug.WriteLine("ExecuteReaderAsync completed successfully.");
-
-                if (await reader.ReadAsync().ConfigureAwait(false))
-                {
-                    Debug.WriteLine("ReadAsync completed successfully.");
-                    return new Activity
-                    {
-                        ActivityId = reader["ActivityId"].ToString(),
-                        UserId = reader["UserId"].ToString(),
-                        SimulationId = reader["SimulationId"].ToString(),
-                        SectionId = reader["SectionId"].ToString(),
-                        Status = reader["Status"].ToString(),
-                        SectionAttempt = Convert.ToInt32(reader["SectionAttempt"]),
-                        StudentFile = reader["StudentFile"].ToString(),
-                        CreateDate = Convert.ToDateTime(reader["CreateDate"]),
-                        ModifyDate = Convert.ToDateTime(reader["ModifyDate"]),
-                        CreateBy = reader["CreateBy"].ToString(),
-                        ModifyBy = reader["ModifyBy"].ToString(),
-                        Result = reader["Result"].ToString()
-                    };
-                }
-
-                Debug.WriteLine("No activity found for the user.");
-                return null;
+                return activity;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in GetLastSessionForUserAsync: {ex.Message}");
-                throw;
+                return null;
             }
         }
-
         public async Task<bool> HaveAllTasksBeenVisited(string activityId, int totalTasksInSection)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -545,25 +516,30 @@ namespace JobSimulation.DAL
             try
             {
                 using var connection = new SqlConnection(_connectionString);
-                return await connection.QueryFirstOrDefaultAsync<Activity>(@"
-         SELECT TOP 1 * 
-         FROM Activity 
-         WHERE UserId = @UserId 
-           AND SimulationId = @SimulationId 
-           AND SectionId != @SectionId 
-         ORDER BY ModifyDate DESC",
-                     new { UserId = userId, SimulationId = simulationId, SectionId = currentSectionId });
+                var activity = await connection.QueryFirstOrDefaultAsync<Activity>(@"
+            SELECT TOP 1 * 
+            FROM Activity 
+            WHERE UserId = @UserId 
+              AND SimulationId = @SimulationId 
+              AND SectionId != @SectionId 
+              AND ModifyDate < (
+                  SELECT MAX(ModifyDate) 
+                  FROM Activity 
+                  WHERE UserId = @UserId 
+                    AND SimulationId = @SimulationId 
+                    AND SectionId = @SectionId
+              )
+            ORDER BY ModifyDate DESC",
+                    new { UserId = userId, SimulationId = simulationId, SectionId = currentSectionId });
+
+                return activity;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error occurred: {ex.Message}");
-                MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                // Handle the error, perhaps log it, or take corrective actions to prevent form closure.
-                return null;  // Ensure no further action triggers the form to close
+                Debug.WriteLine($"Error in GetPreviousActivityAsync: {ex.Message}");
+                return null;
             }
-
         }
-
         public async Task<string> CreateRetryActivityAsync(string userId, string simulationId, string sectionId)
         {
             using var connection = new SqlConnection(_connectionString);

@@ -165,10 +165,10 @@ namespace JobSimulation.Managers
 
             if (Tasks.Count > 0)
             {
-                // Load the last modified task and its time from the database
                 var lastModifiedTask = await GetLastModifiedTaskAsync();
                 if (lastModifiedTask != null)
                 {
+                    // Ensure CurrentTaskIndex is correctly set based on the last modified task's TaskId
                     CurrentTaskIndex = Tasks.FindIndex(t => t.TaskId == lastModifiedTask.TaskId);
                     _taskElapsedTimes[CurrentTaskIndex] = lastModifiedTask.TotalTime;
                 }
@@ -342,7 +342,6 @@ namespace JobSimulation.Managers
         }
         public async Task SaveProgressAsync()
         {
-            var taskId = Tasks[CurrentTaskIndex].TaskId;
             var existingRow = _progressTable.Rows.Find(new object[] { _currentSection.SectionId, UserId });
 
             if (existingRow != null)
@@ -358,13 +357,12 @@ namespace JobSimulation.Managers
                 newRow["UserId"] = UserId;
                 newRow["TaskIndex"] = CurrentTaskIndex;
                 newRow["TimeElapsed"] = _taskElapsedTimes[CurrentTaskIndex];
-                newRow["IsCompleted"] = false;
+                newRow["IsCompleted"] = false;  // You may want to modify this if task completion is tracked here.
                 newRow["FilePath"] = FilePath;
                 _progressTable.Rows.Add(newRow);
             }
 
-            // Use await here to avoid blocking the thread
-            await _taskRepository.SaveCurrentTaskIndexAsync(ActivityId, taskId, CurrentTaskIndex, _currentSection.SectionId, UserId);
+            await _taskRepository.SaveCurrentTaskIndexAsync(ActivityId, Tasks[CurrentTaskIndex].TaskId, CurrentTaskIndex, _currentSection.SectionId, UserId);
         }
 
         public async Task<JobTask> LoadTaskAsync(int taskIndex)

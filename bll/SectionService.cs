@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using JobSimulation.DAL;
@@ -101,33 +102,41 @@ namespace JobSimulation.BLL
 
             try
             {
-                // Check for previous activity before continuing
+                // First get the current section to determine its order
+                var currentSection = await _repository.GetSectionByIdAsync(currentSectionId);
+                if (currentSection == null)
+                {
+                    Debug.WriteLine($"Current section not found: {currentSectionId}");
+                    return null;
+                }
+
+                // Try to get previous activity
                 var lastActivity = await _activityRepository.GetPreviousActivityAsync(userId, simulationId, currentSectionId);
 
-                if (lastActivity == null)
+                // If activity exists and is for a different section, use that
+                if (lastActivity != null && lastActivity.SectionId != currentSectionId)
                 {
-                    // Log the message and exit early without closing the form
-                    Console.WriteLine("No previous activity found, cannot load previous section.");
-                    MessageBox.Show("No previous activity found, cannot load previous section.");
-                    return null;  // Early return to avoid further processing that could lead to form closing
+                    var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
+                    if (prevSection != null)
+                    {
+                        return prevSection;
+                    }
                 }
 
-                // Proceed with fetching the previous section if the activity exists
-                var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
-                if (prevSection == null)
+                // Fall back to getting previous section by order
+                var prevSectionByOrder = await _repository.GetPreviousSectionByOrderAsync(simulationId, currentSection.Order);
+                if (prevSectionByOrder != null)
                 {
-                    Console.WriteLine($"No previous section found for Section ID: {lastActivity.SectionId}");
-                    return null;  // Return null if no previous section is found, preventing form closure
+                    return prevSectionByOrder;
                 }
 
-                return prevSection; // Return the previous section if found
+                Debug.WriteLine("No previous section found by any method");
+                return null;
             }
             catch (Exception ex)
             {
-                // Log any exceptions to avoid form crash
-                Console.WriteLine($"Error fetching previous section: {ex.Message}");
-                MessageBox.Show($"An error occurred while fetching the previous section: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return null;  // Return null to prevent unwanted side effects
+                Debug.WriteLine($"Error fetching previous section: {ex.Message}");
+                return null;
             }
         }
         public async Task<bool> ValidateSectionCompletion(string userId, string sectionId)
