@@ -13,7 +13,6 @@ using JobSimulation.BLL;
 using JobSimulation.DAL;
 using JobSimulation.Models;
 using Activity = JobSimulation.Models.Activity;
-using DocumentFormat.OpenXml.Office2021.DocumentTasks;
 
 namespace JobSimulation.Forms
 {
@@ -176,9 +175,10 @@ namespace JobSimulation.Forms
                 Section nextSection = null;
                 int lastAttempt = 1;
 
+                var fileService = new FileService();
+                // Case 1: Resume in-progress section
                 if (IsSectionInProgress(lastActivity))
                 {
-                    // Resume in-progress section
                     _activityId = lastActivity.ActivityId;
                     nextSection = await _sectionRepository.GetSectionByIdAsync(lastActivity.SectionId);
 
@@ -188,65 +188,55 @@ namespace JobSimulation.Forms
                         return;
                     }
 
-                    _tempFilePath = await System.Threading.Tasks.Task.Run(() => SaveFileToUserDirectory(
-                        Convert.FromBase64String(lastActivity.StudentFile),
-                        GetFileExtension(nextSection.SoftwareId)));
-                    await System.Threading.Tasks.Task.Run(() => OpenFileMaximized(_tempFilePath));
+                    // ✅ Decode from Base64 and open
+                    await Task.Run(() =>
+                    {
+                        var fileBytes = fileService.ConvertBase64ToFile(lastActivity.StudentFile);
+                        string tempFilePathLocal = fileService.OpenStudentFileFromBytes(fileBytes, nextSection.SectionId, nextSection.SoftwareId, _userId);
+                        _tempFilePath = tempFilePathLocal; // Assign to class-level variable
+                    });
                 }
                 else
                 {
-                    // Load next new section
-                    var firstSection = await _sectionService.LoadNextSectionAsync(_userId, _simulationId);
-                    if (firstSection == null)
+                    // Case 2: Load next section (new activity)
+                    nextSection = await _sectionService.LoadNextSectionAsync(_userId, _simulationId);
+                    if (nextSection == null)
                     {
                         MessageBox.Show("All sections completed. Simulation over.");
                         LogoutAndClose();
                         return;
                     }
 
-                    nextSection = firstSection;
-                    _activityId = await _activityRepository.GenerateNewActivityIdAsync(
-                        _userId, _simulationId, nextSection.SectionId);
+                    bool isRetry = false;
+                    _activityId = await GetOrCreateActivityAsync(_userId, _simulationId, nextSection.SectionId, isRetry);
+                    var activity = await _activityRepository.GetActivityByIdAsync(_activityId);
 
-                    var newActivity = new Activity
+                    if (activity == null)
                     {
-                        ActivityId = _activityId,
-                        UserId = _userId,
-                        SimulationId = _simulationId,
-                        SectionId = nextSection.SectionId,
-                        Status = StatusTypes.NotStarted,
-                        SectionAttempt = 1,
-                        StudentFile = nextSection.StudentFile,
-                        CreateDate = DateTime.UtcNow,
-                        ModifyDate = DateTime.UtcNow,
-                        CreateBy = _userId,
-                        ModifyBy = _userId,
-                        Result = string.Empty
-                    };
+                        MessageBox.Show("Failed to load activity for the section.");
+                        return;
+                    }
 
-                    // Ensure the activity is saved before continuing
-                    await _activityRepository.SaveActivityAsync(newActivity);
-
-                    // Ensure the file path is set and the file is saved before opening
-                    _tempFilePath = await System.Threading.Tasks.Task.Run(() => SaveFileToUserDirectory(
-                        Convert.FromBase64String(nextSection.StudentFile),
-                        GetFileExtension(nextSection.SoftwareId)));
-
-                    await System.Threading.Tasks.Task.Run(() => OpenFileMaximized(_tempFilePath));
+                    // ✅ Decode from Base64 and open
+                    _tempFilePath = await Task.Run(() =>
+                    {
+                        var fileBytes = fileService.ConvertBase64ToFile(activity.StudentFile);
+                        return fileService.OpenStudentFileFromBytes(fileBytes, nextSection.SectionId, nextSection.SoftwareId, _userId);
+                    });
                 }
 
-                // Fetch tasks for the next section, if available
+                // Load tasks for the section
                 var (tasks, currentTaskIndex, timeElapsed) = await LoadTaskDetailsForSectionAsync(nextSection.SectionId, _activityId);
 
                 if (tasks == null || tasks.Count == 0)
                 {
-                    LaunchSimulationForm(nextSection, new List<JobTask>(), 0, timeElapsed, lastAttempt);
+                    LaunchSimulationForm(nextSection, new List<JobTask>(), 0, timeElapsed, lastAttempt, _tempFilePath); // Pass _tempFilePath
                     MessageBox.Show("No tasks found for this section.");
                     return;
                 }
 
                 this.currentTaskIndex = currentTaskIndex;
-                LaunchSimulationForm(nextSection, tasks, currentTaskIndex, timeElapsed, lastAttempt);
+                LaunchSimulationForm(nextSection, tasks, currentTaskIndex, timeElapsed, lastAttempt, _tempFilePath); // Pass _tempFilePath
                 this.Hide();
             }
             catch (Exception ex)
@@ -254,7 +244,6 @@ namespace JobSimulation.Forms
                 HandleError("Error in LoadAndLaunchInitialSection", ex);
             }
         }
-
         private async Task<int> GetCurrentTaskIndexAsync(List<JobTask> incompleteTasks, List<JobTask> allTasks)
         {
             var inProgressTasks = new List<JobTask>();
@@ -274,8 +263,7 @@ namespace JobSimulation.Forms
 
             return 0;
         }
-
-        private async void LaunchSimulationForm(Section section, List<JobTask> tasks, int currentTaskIndex, int timeElapsed, int attempt)
+        private async void LaunchSimulationForm(Section section, List<JobTask> tasks, int currentTaskIndex, int timeElapsed, int attempt,string tempFilePath)
         {
             bool isLastSection = await _sectionRepository.IsLastSectionAsync(section.SectionId, _simulationId);
 
@@ -289,7 +277,7 @@ namespace JobSimulation.Forms
 
             _simulationForm = new frmSimulationSoftware(
                 tasks: tasks,
-                filePath: _tempFilePath,
+                filePath: tempFilePath,
                 sectionId: section.SectionId,
                 simulationId: _simulationId,
                 userId: _userId,
@@ -324,7 +312,7 @@ namespace JobSimulation.Forms
             _simulationForm = null;
             this.Show();
         }
-        private void UpdateSimulationForm(Section section, List<JobTask> tasks, int timeElapsed, int attempt)
+        private void UpdateSimulationForm(Section section, List<JobTask> tasks, int timeElapsed, int attempt,string filepath)
         {
             _currentSection = section;
             bool isLastSection = _sections.LastOrDefault()?.SectionId == section.SectionId;
@@ -388,11 +376,13 @@ namespace JobSimulation.Forms
                 int attempt = await GetAttemptCountAsync(action, navResult.Section);
                 if (attempt == -1) return false;
 
-                // Use existing activityId if available (from GetTargetSectionAsync), otherwise create new one
+                // Use existing activityId if available, otherwise create new one
                 string activityId = navResult.ActivityId;
                 if (string.IsNullOrEmpty(activityId))
                 {
-                    activityId = await GetOrCreateActivityAsync(_userId, _simulationId, navResult.Section.SectionId);
+                    bool isRetry = action == SectionNavigationAction.Retry;
+                    activityId = await GetOrCreateActivityAsync(_userId, _simulationId, navResult.Section.SectionId, isRetry);
+
                     if (string.IsNullOrEmpty(activityId))
                     {
                         MessageBox.Show("Failed to create activity");
@@ -400,15 +390,28 @@ namespace JobSimulation.Forms
                     }
                 }
 
-                // Load the student file from that activity
                 var activity = await _activityRepository.GetActivityByIdAsync(activityId);
-                CloseFile(_tempFilePath); // Ensure previous file is closed
+                if (activity == null)
+                {
+                    MessageBox.Show("Activity not found");
+                    return false;
+                }
 
-                _tempFilePath = SaveFileToUserDirectory(
-                    Convert.FromBase64String(activity.StudentFile),
-                    GetFileExtension(navResult.Section.SoftwareId));
+                // ✅ Use FileService to handle file decoding and saving
+                var fileService = new FileService();
 
-                // Get task list and progress
+                // Close old file if needed
+                fileService.CloseFile(_tempFilePath);
+
+                // Convert base64 and save new file
+                _tempFilePath = fileService.SaveFileToUserDirectory(
+          fileService.ConvertBase64ToFile(activity.StudentFile),
+          fileService.GetFileExtension(navResult.Section.SoftwareId),
+          navResult.Section.SectionId,
+          _userId);
+
+
+                // Load task progress
                 var (tasks, taskIndex, elapsedTime) = await LoadTaskDetailsForSectionAsync(navResult.Section.SectionId, activityId);
                 if (tasks == null || tasks.Count == 0)
                 {
@@ -416,7 +419,7 @@ namespace JobSimulation.Forms
                     return false;
                 }
 
-                // Override taskIndex only if it was passed from navigation
+                // Override task index if coming from Previous section
                 if (action == SectionNavigationAction.Previous && navResult.TaskIndex >= 0)
                 {
                     taskIndex = navResult.TaskIndex;
@@ -506,15 +509,33 @@ namespace JobSimulation.Forms
 
         private async Task<bool> LaunchSectionFromActivity(Section section, string activityId, int attempt, SectionNavigationAction action)
         {
-            // Close old file
-            CloseFile(_tempFilePath);
+            var fileService = new FileService();
+            fileService.CloseFile(_tempFilePath);
 
-            // Save new file
-            _tempFilePath = SaveFileToUserDirectory(
-                Convert.FromBase64String(section.StudentFile),
-                GetFileExtension(section.SoftwareId));
+            var activity = await _activityRepository.GetActivityByIdAsync(activityId);
+            if (activity == null)
+            {
+                MessageBox.Show("Activity not found.");
+                return false;
+            }
 
-            OpenFileMaximized(_tempFilePath);
+            // Fetch student file from the activity (not section)
+            var studentFileBase64 = activity.StudentFile;
+            if (string.IsNullOrEmpty(studentFileBase64))
+            {
+                MessageBox.Show("No student file found in activity.");
+                return false;
+            }
+
+            // Save the activity file locally
+            _tempFilePath = fileService.SaveFileToUserDirectory(
+                fileService.ConvertBase64ToFile(studentFileBase64),
+                fileService.GetFileExtension(section.SoftwareId),
+                section.SectionId,
+                _userId);
+
+            fileService.OpenFileMaximized(_tempFilePath);
+
 
             // Get tasks
             var tasks = await _taskRepository.GetTasksBySectionIdAsync(section.SectionId, _userId);
@@ -528,19 +549,13 @@ namespace JobSimulation.Forms
             int taskIndex = 0;
             if (action == SectionNavigationAction.Previous)
             {
-                // Get last task progress for this section
                 var lastActivity = await _activityRepository.GetLatestActivityAsync(_userId, _simulationId, section.SectionId);
                 if (lastActivity != null)
                 {
-                    var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(lastActivity.ActivityId);
-                    var lastTask = skillMatrixEntries.OrderByDescending(e => e.ModifyDate).FirstOrDefault();
-                    if (lastTask != null)
-                    {
-                        taskIndex = tasks.FindIndex(t => t.TaskId == lastTask.TaskId);
-                        if (taskIndex < 0) taskIndex = 0;
-                    }
+                    taskIndex = await GetLastTaskIndexAsync(section.SectionId, lastActivity.ActivityId, tasks);
                 }
             }
+
 
             // Get elapsed time for the task
             int elapsedTime = 0;
@@ -550,39 +565,9 @@ namespace JobSimulation.Forms
             }
 
             // Launch form with proper task index
-            LaunchSimulationForm(section, tasks, taskIndex, elapsedTime, attempt);
+            LaunchSimulationForm(section, tasks, taskIndex, elapsedTime, attempt, _tempFilePath);
             return true;
         }
-
-        //private async Task<Section> GetTargetSectionAsync(SectionNavigationAction action)
-        //{
-        //    switch (action)
-        //    {
-        //        case SectionNavigationAction.Next:
-        //            var next = await _sectionService.GetNextSectionAsync(_userId, _simulationId, _currentSection?.SectionId);
-        //            if (next == null)
-        //            {
-        //                MessageBox.Show("All sections completed!");
-        //                return null;
-        //            }
-        //            return next;
-
-        //        case SectionNavigationAction.Previous:
-        //            if (_currentSection == null) return null;
-        //            var prev = await _sectionService.GetPreviousSectionAsync(_userId, _simulationId, _currentSection.SectionId);
-        //            if (prev == null)
-        //            {
-        //                MessageBox.Show("This is the first section");
-        //            }
-        //            return prev;
-
-        //        case SectionNavigationAction.Retry:
-        //            return _currentSection;
-
-        //        default:
-        //            return null;
-        //    }
-        //}
 
         private async Task<SectionNavigationResult> GetTargetSectionAsync(SectionNavigationAction action)
         {
@@ -607,13 +592,8 @@ namespace JobSimulation.Forms
                         int taskIndex = 0;
                         if (lastActivity != null)
                         {
-                            var skillMatrix = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(lastActivity.ActivityId);
-                            var lastTask = skillMatrix.OrderByDescending(sm => sm.ModifyDate).FirstOrDefault();
-                            if (lastTask != null)
-                            {
-                                var tasks = await _taskRepository.GetTasksBySectionIdAsync(prevSection.SectionId, _userId);
-                                taskIndex = tasks.FindIndex(t => t.TaskId == lastTask.TaskId);
-                            }
+                            var tasks = await _taskRepository.GetTasksBySectionIdAsync(prevSection.SectionId, _userId);
+                            taskIndex = await GetLastTaskIndexAsync(prevSection.SectionId, lastActivity.ActivityId, tasks);
 
                             return new SectionNavigationResult
                             {
@@ -654,19 +634,28 @@ namespace JobSimulation.Forms
 
             return attempt;
         }
-
-        private async Task<string> GetOrCreateActivityAsync(string userId, string simulationId, string sectionId)
+        private async Task<int> GetLastTaskIndexAsync(string sectionId, string activityId, List<JobTask> tasks)
         {
-            var existing = await _activityRepository.GetLatestActivityAsync(userId, simulationId, sectionId);
-            if (existing != null)
+            var skillMatrix = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(activityId);
+            var lastTask = skillMatrix.OrderByDescending(sm => sm.ModifyDate).FirstOrDefault();
+            return lastTask != null ? tasks.FindIndex(t => t.TaskId == lastTask.TaskId) : 0;
+        }
+
+        private async Task<string> GetOrCreateActivityAsync(string userId, string simulationId, string sectionId, bool isRetry)
+        {
+            if (!isRetry)
             {
-                return existing.ActivityId;
+                var existing = await _activityRepository.GetLatestActivityAsync(userId, simulationId, sectionId);
+                if (existing != null)
+                {
+                    return existing.ActivityId;
+                }
             }
 
-            // Generate a new ActivityId if no existing activity found
+            // Generate a new ActivityId
             string newActivityId = await _activityRepository.GenerateNewActivityIdAsync(userId, simulationId, sectionId);
 
-            var section = await _sectionRepository.GetSectionByIdAsync(sectionId); // Fetch the section details
+            var section = await _sectionRepository.GetSectionByIdAsync(sectionId); // Fetch section details
 
             var newActivity = new Activity
             {
@@ -674,53 +663,19 @@ namespace JobSimulation.Forms
                 UserId = userId,
                 SimulationId = simulationId,
                 SectionId = sectionId,
-                Status = StatusTypes.NotStarted,  // or another initial status
+                Status = StatusTypes.NotStarted,
                 SectionAttempt = 1,
-                StudentFile = section.StudentFile,  // Set this as required
+                StudentFile = section.StudentFile,
                 CreateDate = DateTime.UtcNow,
                 ModifyDate = DateTime.UtcNow,
                 CreateBy = userId,
                 ModifyBy = userId,
-                Result = string.Empty  // or any other initial value
+                Result = string.Empty
             };
 
-            // Save the new activity to the database
             await _activityRepository.SaveActivityAsync(newActivity);
 
             return newActivityId;
-        }
-        private void OpenFileMaximized(string filePath)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo(filePath)
-                {
-                    UseShellExecute = true,
-                    WindowStyle = ProcessWindowStyle.Maximized
-                })?.WaitForInputIdle();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error opening file: {ex.Message}");
-            }
-        }
-
-        private string GetFileExtension(string softwareId) => softwareId switch
-        {
-            "S1" => ".xlsx",
-            "S2" => ".docx",
-            "S3" => ".pptx",
-            "S4" => ".gsheet",
-            "S5" => ".gdoc",
-            "S6" => ".gslides",
-            _ => throw new ArgumentException("Unknown software ID")
-        };
-
-        private string SaveFileToUserDirectory(byte[] fileBytes, string fileExtension)
-        {
-            string filePath = Path.Combine(_userDirectoryPath, $"SimulationFile{fileExtension}");
-            File.WriteAllBytes(filePath, fileBytes);
-            return filePath;
         }
 
 
@@ -742,7 +697,7 @@ namespace JobSimulation.Forms
         {
             try
             {
-                CloseFile(_tempFilePath);
+                _fileService.DeleteFile(_tempFilePath);
             }
             catch (Exception ex)
             {
@@ -751,34 +706,7 @@ namespace JobSimulation.Forms
             base.OnFormClosed(e);
         }
 
-        private void CloseFile(string filePath)
-        {
-            try
-            {
-                var processName = GetProcessNameForFileType(filePath);
-                if (!string.IsNullOrEmpty(processName))
-                {
-                    foreach (var process in Process.GetProcessesByName(processName))
-                        process.Kill();
-                }
-                if (File.Exists(filePath)) File.Delete(filePath);
-            }
-            catch (Exception ex)
-            {
-                //MessageBox.Show($"Error closing file: {ex.Message}");
-            }
-        }
 
-        private string GetProcessNameForFileType(string filePath) =>
-            Path.GetExtension(filePath)?.ToLower() switch
-            {
-                ".xlsx" or ".xls" => "EXCEL",
-                ".pdf" => "Acrobat",
-                ".docx" or ".doc" => "WINWORD",
-                ".pptx" or ".ppt" => "POWERPNT",
-                ".txt" => "notepad",
-                _ => null
-            };
         private void LogoutAndClose()
         {
             MessageBox.Show("Simulation completed. Logging out...");

@@ -34,7 +34,7 @@ namespace JobSimulation.Forms
         private readonly string _simulationId;
         private string _sectionId;
         private readonly string _userId;
-
+            private string _masterJson;
         public frmSimulationSoftware(
             List<JobTask> tasks,
             string filePath,
@@ -66,24 +66,20 @@ namespace JobSimulation.Forms
             this._currentSection = currentSection;
 
             _simulationManager = new SimulationManager(
-                tasks,
-                filePath,
-                sectionId,
-                simulationId,
-                userId,
-                sectionRepository,
-                fileService,
-                skillMatrixRepository,
-                activityRepository,
-                taskRepository,
-                sectionService,
-                userRepository,
-                softwareId,
-                activityId,
-                progressDataSet,
-                attempt,
-                currentSection,
-                currentTaskIndex);
+      tasks,
+      filePath,
+      simulationId,       // ✅ removed sectionId
+      userId,
+      fileService,
+      skillMatrixRepository,
+      activityRepository,
+      taskRepository,
+      progressDataSet,
+      attempt,
+      currentSection,
+      activityId,         // ✅ moved activityId to correct position
+      currentTaskIndex);  // ✅ correctly passed
+
 
             InitializeComponent();
             InitializeComponents();
