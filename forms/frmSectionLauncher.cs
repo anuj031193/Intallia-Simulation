@@ -409,7 +409,7 @@ namespace JobSimulation.Forms
           fileService.GetFileExtension(navResult.Section.SoftwareId),
           navResult.Section.SectionId,
           _userId);
-
+                fileService.OpenFileMaximized(_tempFilePath);
 
                 // Load task progress
                 var (tasks, taskIndex, elapsedTime) = await LoadTaskDetailsForSectionAsync(navResult.Section.SectionId, activityId);
@@ -582,6 +582,29 @@ namespace JobSimulation.Forms
                         TaskIndex = 0
                     };
 
+                //case SectionNavigationAction.Previous:
+                //    if (_currentSection == null) return null;
+
+                //    var prevSection = await _sectionService.GetPreviousSectionAsync(_userId, _simulationId, _currentSection.SectionId);
+                //    if (prevSection != null)
+                //    {
+                //        var lastActivity = await _activityRepository.GetLatestActivityAsync(_userId, _simulationId, prevSection.SectionId);
+                //        int taskIndex = 0;
+                //        if (lastActivity != null)
+                //        {
+                //            var tasks = await _taskRepository.GetTasksBySectionIdAsync(prevSection.SectionId, _userId);
+                //            taskIndex = await GetLastTaskIndexAsync(prevSection.SectionId, lastActivity.ActivityId, tasks);
+
+                //            return new SectionNavigationResult
+                //            {
+                //                Section = prevSection,
+                //                ActivityId = lastActivity.ActivityId,
+                //                TaskIndex = taskIndex
+                //            };
+                //        }
+                //    }
+                //    return new SectionNavigationResult { Section = prevSection };
+
                 case SectionNavigationAction.Previous:
                     if (_currentSection == null) return null;
 
@@ -589,11 +612,11 @@ namespace JobSimulation.Forms
                     if (prevSection != null)
                     {
                         var lastActivity = await _activityRepository.GetLatestActivityAsync(_userId, _simulationId, prevSection.SectionId);
-                        int taskIndex = 0;
                         if (lastActivity != null)
                         {
                             var tasks = await _taskRepository.GetTasksBySectionIdAsync(prevSection.SectionId, _userId);
-                            taskIndex = await GetLastTaskIndexAsync(prevSection.SectionId, lastActivity.ActivityId, tasks);
+                            // ✅ Get the actual latest task index from skill matrix
+                            int taskIndex = await GetLastTaskIndexAsync(prevSection.SectionId, lastActivity.ActivityId, tasks);
 
                             return new SectionNavigationResult
                             {
