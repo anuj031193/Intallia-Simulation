@@ -671,11 +671,15 @@ namespace JobSimulation.Forms
 
         private async void frmSimulationSoftware_Load(object sender, EventArgs e)
         {
-            var nextSection = await _sectionRepository.GetNextSectionAsync(_simulationId, _sectionId);
-            if (nextSection == null)
-            {
-                btnSaveandNextSession.Enabled = false;
-            }
+            await UpdateSectionNavigationButtons(_sectionId);
+        }
+
+        private async Task UpdateSectionNavigationButtons(string sectionId)
+        {
+            btnSaveandNextSession.Enabled = await _sectionRepository.GetNextSectionAsync(_simulationId, sectionId) != null;
+
+            var firstSection = await _sectionRepository.GetFirstSectionAsync(_simulationId);
+            btnSaveandPreviousSession.Enabled = !(firstSection != null && firstSection.SectionId == sectionId);
         }
 
         public void SetCurrentTaskIndex(int taskIndex)
@@ -985,11 +989,13 @@ namespace JobSimulation.Forms
                 newCurrentSection,
                 newTaskIndex
             );
+            await UpdateSectionNavigationButtons(newSectionId);
 
             // Optionally reset form UI elements here:
             btnStart.Enabled = true;
             btnStart.Visible = true;
             btnSaveandNextSession.Visible = true;
+
             btnCompleteSimulation.Visible = isLastSection;
             lblTimer.Text = "Time: 0 sec";
             DisableControls();

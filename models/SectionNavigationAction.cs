@@ -12,5 +12,11 @@ namespace JobSimulation.Models
         Previous,
         Retry
     }
+   public class SectionNavigationResult
+    {
+        public Section Section { get; set; }
+        public string ActivityId { get; set; }
+        public int TaskIndex { get; set; }
+    }
 
 }
