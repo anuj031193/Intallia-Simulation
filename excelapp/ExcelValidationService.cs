@@ -31,13 +31,9 @@ namespace JobSimulation.excelApp
             _excelDatabase = excelDatabase ?? throw new ArgumentNullException(nameof(excelDatabase));
         }
 
-  public string GetMasterJsonForSection(string sectionId)
+        public string GetMasterJsonForSection(string sectionId)
         {
-            return _sectionMasterJsonCache.GetOrAdd(sectionId, id =>
-            {
-                string masterJsonString = _excelDatabase.FetchMasterJson(id);
-                return masterJsonString;
-            });
+            return _excelDatabase.FetchMasterJson(sectionId);
         }
 
         public bool ValidateExcelTask(TaskSubmission taskSubmission, string masterJson)

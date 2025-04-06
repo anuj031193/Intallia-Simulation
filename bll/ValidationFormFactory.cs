@@ -2,6 +2,7 @@
 using JobSimulation.DAL;
 using JobSimulation.excelApp;
 using JobSimulation.Models;
+using JobSimulation.wordApp;
 using Newtonsoft.Json.Linq;
 
 namespace JobSimulation.BLL
@@ -27,6 +28,40 @@ namespace JobSimulation.BLL
     }
 
     // Excel validation form that implements the IValidationForm interface
+
+  
+    public static class ValidationFormFactory
+    {
+        public static IValidationForm CreateValidationForm(TaskSubmission taskSubmission, FileService fileService)
+        {
+            var validationService = new ValidationService();
+
+            switch (taskSubmission.SoftwareId.ToUpper())
+            {
+                case "S1": // Excel
+                    var excelDatabase = new ExcelDatabase(fileService);
+                    var excelValidationService = new ExcelValidationService(validationService, excelDatabase);
+                    return new ExcelValidationForm(excelValidationService);
+
+                case "S2": // Word
+                    var wordDatabase = new WordDatabase(fileService);
+                    var wordValidationService = new WordValidationService(validationService, wordDatabase);
+                    return new WordValidationForm(wordValidationService);
+
+
+                case "S3":
+                    // Placeholder for PowerPoint validation logic
+                    // return new PowerPointValidationForm();
+                    break;
+
+                default:
+                    throw new NotSupportedException($"Software ID '{taskSubmission.SoftwareId}' is not supported.");
+            }
+
+            return null; // In case no valid option is found
+        }
+    }
+
     public class ExcelValidationForm : IValidationForm
     {
         private readonly ExcelValidationService _excelValidationService;
@@ -41,10 +76,7 @@ namespace JobSimulation.BLL
             return _excelValidationService.ValidateExcelTask(taskSubmission, masterJson);
         }
 
-        //public void WriteResultToExcelOpenXml(TaskSubmission taskSubmission, bool isCorrect)
-        //{
-        //    _excelValidationService.WriteResultToExcelOpenXml(taskSubmission.FilePath, taskSubmission.Task, isCorrect);
-        //}
+
 
         public string GetMasterJsonForSection(string sectionId)
         {
@@ -52,37 +84,25 @@ namespace JobSimulation.BLL
         }
     }
 
-    // Factory to create validation form instances based on software ID
-    // ValidationFormFactory
-    public static class ValidationFormFactory
+
+
+    public class WordValidationForm : IValidationForm
     {
-        public static IValidationForm CreateValidationForm(TaskSubmission taskSubmission)
+        private readonly WordValidationService _wordValidationService;
+
+        public WordValidationForm(WordValidationService wordValidationService)
         {
-            var validationService = new ValidationService();
+            _wordValidationService = wordValidationService;
+        }
 
-            switch (taskSubmission.SoftwareId)
-            {
-                case "S1":
-                    // Assuming this is for Excel
-                    var excelDatabase = new ExcelDatabase(/* connection string or dependencies */);
-                    var excelValidationService = new ExcelValidationService(validationService, excelDatabase);
-                    return new ExcelValidationForm(excelValidationService);
+        public bool ValidateTask(TaskSubmission taskSubmission, string masterJson)
+        {
+            return _wordValidationService.ValidateWordTask(taskSubmission, masterJson);
+        }
 
-                case "S2":
-                    // Placeholder for Word validation logic
-                    // return new WordValidationForm();
-                    break;
-
-                case "S3":
-                    // Placeholder for PowerPoint validation logic
-                    // return new PowerPointValidationForm();
-                    break;
-
-                default:
-                    throw new NotSupportedException($"Software ID '{taskSubmission.SoftwareId}' is not supported.");
-            }
-
-            return null; // In case no valid option is found
+        public string GetMasterJsonForSection(string sectionId)
+        {
+            return _wordValidationService.GetMasterJsonForSection(sectionId);
         }
     }
 }

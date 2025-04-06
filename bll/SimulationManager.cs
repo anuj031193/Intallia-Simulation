@@ -15,13 +15,13 @@ namespace JobSimulation.Managers
 {
     public class SimulationManager
     {
-        public int CurrentTaskIndex { get; private set; }
-        public List<JobTask> Tasks { get; private set; }
-        public string FilePath { get; private set; }
-        public string ActivityId { get; private set; }
+        public int CurrentTaskIndex { get;  set; }
+        public List<JobTask> Tasks { get;  set; }
+        public string FilePath { get;  set; }
+        public string ActivityId { get;  set; }
         public string UserId { get; }
         public string SimulationId { get; }
-        public int Attempt { get; private set; }
+        public int Attempt { get;  set; }
         private List<Section> _sections;
         private int _currentSectionIndex; 
         public ActivityRepository ActivityRepository { get; }
@@ -56,7 +56,7 @@ namespace JobSimulation.Managers
             string activityId,
             DataSet progressDataSet,
             int attempt,
-            Section currentSection)
+            Section currentSection, int initialTaskIndex = 0)
         {
             Tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
             FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
@@ -70,7 +70,7 @@ namespace JobSimulation.Managers
             _activityRepository = activityRepository ?? throw new ArgumentNullException(nameof(activityRepository));
             _sectionRepository = sectionRepository ?? throw new ArgumentNullException(nameof(sectionRepository));
             _progressTable = _progressDataSet.Tables["SectionProgress"];
-            CurrentTaskIndex = 0;
+            CurrentTaskIndex = initialTaskIndex;
             _currentSection = currentSection;
             _masterJson = string.Empty;
             _taskElapsedTimes = new Dictionary<int, int>();
@@ -85,29 +85,36 @@ namespace JobSimulation.Managers
             Attempt = attempt;
         }
 
-        public void UpdateSectionData(
-    List<JobTask> newTasks,
-    string newFilePath,
-    string newSectionId,
-    string newSoftwareId,
-    string newActivityId,
-    int newAttempt,
-    Section newCurrentSection)
+        public async Task UpdateSectionDataAsync(
+       List<JobTask> newTasks,
+       string newFilePath,
+       string newSectionId,
+       string newSoftwareId,
+       string newActivityId,
+       int newAttempt,
+       Section newCurrentSection,
+       int newTaskIndex)
         {
             Tasks = newTasks;
             FilePath = newFilePath;
             ActivityId = newActivityId;
             Attempt = newAttempt;
             _currentSection = newCurrentSection;
+            CurrentTaskIndex = newTaskIndex;
 
-            // Reset task tracking
-            CurrentTaskIndex = 0;
             _taskElapsedTimes.Clear();
             for (int i = 0; i < Tasks.Count; i++)
-            {
                 _taskElapsedTimes[i] = 0;
+
+            if (CurrentTaskIndex >= 0 && CurrentTaskIndex < Tasks.Count)
+            {
+                var taskId = Tasks[CurrentTaskIndex].TaskId;
+                var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, taskId);
+                if (existingEntry != null)
+                    _taskElapsedTimes[CurrentTaskIndex] = existingEntry.TotalTime;
             }
         }
+
 
 
 
@@ -155,37 +162,43 @@ namespace JobSimulation.Managers
             _progressTable.AcceptChanges(); // or write to file/db
         }
 
-        public async Task LoadSectionAsync(Section section)
+        public async Task LoadSectionAsync(Section section, int initialTaskIndex = -1)
         {
             var tasks = await _sectionService.GetAllTasksForSectionAsync(section.SectionId, section.SoftwareId);
 
-            // Order tasks by ModifyDate (newest first)
             Tasks.Clear();
             Tasks.AddRange(tasks.OrderByDescending(t => t.ModifyDate));
 
             if (Tasks.Count > 0)
             {
-                var lastModifiedTask = await GetLastModifiedTaskAsync();
-                if (lastModifiedTask != null)
+                // Use provided index if valid, otherwise fall back to last modified task
+                if (initialTaskIndex >= 0 && initialTaskIndex < Tasks.Count)
                 {
-                    // Ensure CurrentTaskIndex is correctly set based on the last modified task's TaskId
-                    CurrentTaskIndex = Tasks.FindIndex(t => t.TaskId == lastModifiedTask.TaskId);
-                    _taskElapsedTimes[CurrentTaskIndex] = lastModifiedTask.TotalTime;
+                    CurrentTaskIndex = initialTaskIndex;
                 }
                 else
                 {
-                    CurrentTaskIndex = 0; // Default to the first task if no previous task is found
+                    var lastModifiedTask = await GetLastModifiedTaskAsync();
+                    CurrentTaskIndex = lastModifiedTask != null ?
+                        Tasks.FindIndex(t => t.TaskId == lastModifiedTask.TaskId) : 0;
+                }
+
+                // Load elapsed time for current task
+                if (CurrentTaskIndex >= 0 && CurrentTaskIndex < Tasks.Count)
+                {
+                    var taskId = Tasks[CurrentTaskIndex].TaskId;
+                    var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, taskId);
+                    _taskElapsedTimes[CurrentTaskIndex] = existingEntry?.TotalTime ?? 0;
                 }
             }
             else
             {
-                CurrentTaskIndex = -1; // No tasks available
+                CurrentTaskIndex = -1;
             }
 
             _currentSection = section;
             InitializeTaskElapsedTimes();
         }
-
         private async Task<SkillMatrix> GetLastModifiedTaskAsync()
         {
             var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(ActivityId);
@@ -239,9 +252,10 @@ namespace JobSimulation.Managers
             {
                 SectionId = _currentSection.SectionId,
                 SoftwareId = _currentSection.SoftwareId // Assuming softwareId is the filePath
-            });
+            }, _fileService); // Pass the _fileService instance here
             _masterJson = validationForm.GetMasterJsonForSection(_currentSection.SectionId);
         }
+
 
         public async Task SaveCurrentStateAsync()
         {
@@ -294,7 +308,7 @@ namespace JobSimulation.Managers
                 Task = task
             };
 
-            var validationForm = ValidationFormFactory.CreateValidationForm(taskSubmission);
+            var validationForm = ValidationFormFactory.CreateValidationForm(taskSubmission, _fileService);
             return validationForm.ValidateTask(taskSubmission, _masterJson);
         }
 
@@ -342,6 +356,7 @@ namespace JobSimulation.Managers
         }
         public async Task SaveProgressAsync()
         {
+            // Save to local DataTable
             var existingRow = _progressTable.Rows.Find(new object[] { _currentSection.SectionId, UserId });
 
             if (existingRow != null)
@@ -357,14 +372,19 @@ namespace JobSimulation.Managers
                 newRow["UserId"] = UserId;
                 newRow["TaskIndex"] = CurrentTaskIndex;
                 newRow["TimeElapsed"] = _taskElapsedTimes[CurrentTaskIndex];
-                newRow["IsCompleted"] = false;  // You may want to modify this if task completion is tracked here.
+                newRow["IsCompleted"] = false;
                 newRow["FilePath"] = FilePath;
                 _progressTable.Rows.Add(newRow);
             }
 
-            await _taskRepository.SaveCurrentTaskIndexAsync(ActivityId, Tasks[CurrentTaskIndex].TaskId, CurrentTaskIndex, _currentSection.SectionId, UserId);
+            // Save to database using TaskId instead of index
+            await _taskRepository.SaveCurrentTaskIndexAsync(
+                ActivityId,
+                Tasks[CurrentTaskIndex].TaskId,
+                CurrentTaskIndex,
+                _currentSection.SectionId,
+                UserId);
         }
-
         public async Task<JobTask> LoadTaskAsync(int taskIndex)
         {
             if (taskIndex < 0 || taskIndex >= Tasks.Count) return null;
@@ -616,12 +636,12 @@ namespace JobSimulation.Managers
             if (CurrentTaskIndex < Tasks.Count - 1)
             {
                 CurrentTaskIndex++;
+                await MarkTaskAsVisited(CurrentTaskIndex);
                 await SaveCurrentStateAsync();
-                await LoadTaskAsync(CurrentTaskIndex); // Load the current task
             }
             else
             {
-                await HandleSectionCompletion(); // Handle if at last task
+                await HandleSectionCompletion();
             }
         }
 
@@ -631,11 +651,9 @@ namespace JobSimulation.Managers
             {
                 CurrentTaskIndex--;
                 await SaveCurrentStateAsync();
-                await LoadTaskAsync(CurrentTaskIndex);// Load the current task
             }
         }
 
-     
 
 
     }

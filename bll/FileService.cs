@@ -8,6 +8,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Data.SqlClient;
 using JobSimulation.DAL;
 using JobSimulation.Models;
+using System.Text;
 
 namespace JobSimulation.BLL
 {
@@ -49,26 +50,29 @@ namespace JobSimulation.BLL
             }
         }
 
-        //public void SaveFile(string filePath, string softwareId)
-        //{
-        //    switch (softwareId)
-        //    {
-        //        case "S1":
-        //            SaveExcelFile(filePath);
-        //            break;
-        //        case "S2":
-        //            SaveWordFile(filePath);
-        //            break;
-        //        case "S3":
-        //            SavePowerPointFile(filePath);
-        //            break;
-        //        default:
-        //            throw new NotSupportedException($"Software ID '{softwareId}' is not supported.");
-        //    }
-        //}
 
 
-      
+        public string FetchSectionJson(string sectionId)
+        {
+            string jsonString = string.Empty;
+            using (SqlConnection connection = new SqlConnection(_connectionString))
+            {
+                connection.Open();
+                string query = "SELECT JsonFile FROM Section WHERE SectionId = @SectionId";
+                using (SqlCommand command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@SectionId", sectionId);
+                    var result = command.ExecuteScalar();
+                    if (result != null)
+                    {
+                        jsonString = result.ToString();
+                    }
+                }
+            }
+            var decodedJson = Encoding.UTF8.GetString(Convert.FromBase64String(jsonString));
+            return decodedJson;
+        }
+
 
         public void SaveStudentFileToDatabase(string sectionId, string userId, string base64File)
         {
@@ -245,16 +249,5 @@ namespace JobSimulation.BLL
             return false;
         }
 
-        //private WorksheetPart GetWorksheetPartByName(SpreadsheetDocument document, string sheetName)
-        //{
-        //    foreach (Sheet sheet in document.WorkbookPart.Workbook.Sheets)
-        //    {
-        //        if (sheet.Name == sheetName)
-        //        {
-        //            return (WorksheetPart)document.WorkbookPart.GetPartById(sheet.Id);
-        //        }
-        //    }
-        //    return null;
-        //}
     }
 }

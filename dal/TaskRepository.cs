@@ -54,18 +54,19 @@ namespace JobSimulation.DAL
             await connection.OpenAsync();
 
             var query = $@"
-                SELECT 
-                    t.TaskId, t.SectionId, t.[Order], t.Description, t.CompanyId, t.CreateBy, t.CreateDate, t.ModifyBy, t.ModifyDate,
-                    d.TaskDescription, d.SheetName, d.SelectTask, d.[From], d.[To], d.ResultCellLocation, d.Hint, d.SkillName, d.SkillScore
-                FROM Task t
-                LEFT JOIN {tableName} d ON t.TaskId = d.TaskId
-                WHERE t.TaskId = @TaskId";
+        SELECT 
+            t.TaskId, t.SectionId, t.[Order], t.Description, t.CompanyId, 
+            t.CreateBy, t.CreateDate, t.ModifyBy, t.ModifyDate,
+            d.*
+        FROM Task t
+        LEFT JOIN {tableName} d ON t.TaskId = d.TaskId
+        WHERE t.TaskId = @TaskId";
 
             var record = await connection.QueryFirstOrDefaultAsync(query, new { TaskId = taskId });
 
             if (record != null)
             {
-                return new JobTask
+                var task = new JobTask
                 {
                     TaskId = record.TaskId,
                     SectionId = record.SectionId,
@@ -75,25 +76,48 @@ namespace JobSimulation.DAL
                     CreateBy = record.CreateBy,
                     CreateDate = record.CreateDate,
                     ModifyBy = record.ModifyBy,
-                    ModifyDate = record.ModifyDate,
-                    Details = new
-                    {
-                        TaskDescription = record.TaskDescription,
-                        SheetName = record.SheetName,
-                        SelectTask = record.SelectTask,
-                        From = record.From,
-                        To = record.To,
-                        ResultCellLocation = record.ResultCellLocation,
-                        Hint = record.Hint,
-                        SkillName = record.SkillName,
-                        SkillScore = record.SkillScore
-                    }
+                    ModifyDate = record.ModifyDate
                 };
+
+                // Create the appropriate details object based on software type
+                switch (softwareId.ToLower())
+                {
+                    case "s1": // Excel
+                        task.Details = new ExcelTaskDetails
+                        {
+                            TaskDescription = record.TaskDescription,
+                            SheetName = record.SheetName,
+                            SelectTask = record.SelectTask,
+                            From = record.From,
+                            To = record.To,
+                            ResultCellLocation = record.ResultCellLocation,
+                            Hint = record.Hint,
+                            SkillName = record.SkillName,
+                            SkillScore = record.SkillScore
+                        };
+                        break;
+
+                    case "s2": // Word
+                        task.Details = new WordTaskDetails
+                        {
+                            TaskDescription = record.TaskDescription,
+                            TaskLocation = record.TaskLocation,
+                            Hint = record.Hint,
+                            SkillName = record.SkillName,
+                            SkillScore = record.SkillScore
+                        };
+                        break;
+
+                    // Add cases for other software types as needed
+                    default:
+                        throw new NotSupportedException($"Software type {softwareId} not supported");
+                }
+
+                return task;
             }
 
             return null;
         }
-
         public async Task<JobTask> GetNextTaskForSectionAsync(string sectionId, int currentTaskIndex)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -126,18 +150,17 @@ namespace JobSimulation.DAL
                 throw new KeyNotFoundException($"Software type {softwareId} not supported");
 
             var query = $@"
-                SELECT 
-                    t.TaskId, t.SectionId, t.[Order], t.Description,
-                    COALESCE(sm.Status, '{StatusTypes.NotStarted}') AS Status,
-                    COALESCE(sm.AttemptstoSolve, 0) AS AttemptstoSolve,
-                    COALESCE(sm.TaskAttempt, 0) AS TaskAttempt,
-                    d.TaskDescription, d.SheetName, d.SelectTask, d.[From], d.[To], 
-                    d.ResultCellLocation, d.Hint, d.SkillName, d.SkillScore
-                FROM Task t
-                LEFT JOIN {tableName} d ON t.TaskId = d.TaskId
-                LEFT JOIN SkillMatrix sm ON t.TaskId = sm.TaskId AND sm.ActivityId = @ActivityId
-                WHERE t.SectionId = @SectionId
-                ORDER BY t.[Order]";
+        SELECT 
+            t.TaskId, t.SectionId, t.[Order], t.Description,
+            COALESCE(sm.Status, '{StatusTypes.NotStarted}') AS Status,
+            COALESCE(sm.AttemptstoSolve, 0) AS AttemptstoSolve,
+            COALESCE(sm.TaskAttempt, 0) AS TaskAttempt,
+            d.*
+        FROM Task t
+        LEFT JOIN {tableName} d ON t.TaskId = d.TaskId
+        LEFT JOIN SkillMatrix sm ON t.TaskId = sm.TaskId AND sm.ActivityId = @ActivityId
+        WHERE t.SectionId = @SectionId
+        ORDER BY t.[Order]";
 
             var results = await connection.QueryAsync(query, new
             {
@@ -145,30 +168,55 @@ namespace JobSimulation.DAL
                 ActivityId = activityId
             });
 
-            return results.Select(record => new JobTask
+            return results.Select(record =>
             {
-                TaskId = record.TaskId,
-                SectionId = record.SectionId,
-                Order = record.Order,
-                Description = record.Description,
-                Details = new
+                var task = new JobTask
                 {
-                    TaskDescription = record.TaskDescription,
-                    SheetName = record.SheetName,
-                    SelectTask = record.SelectTask,
-                    From = record.From,
-                    To = record.To,
-                    ResultCellLocation = record.ResultCellLocation,
-                    Hint = record.Hint,
-                    SkillName = record.SkillName,
-                    SkillScore = record.SkillScore,
-                    Status = record.Status,
-                    AttemptsToSolve = record.AttemptsToSolve,
-                    TaskAttempt = record.TaskAttempt
+                    TaskId = record.TaskId,
+                    SectionId = record.SectionId,
+                    Order = record.Order,
+                    Description = record.Description
+                };
+
+                // Create the appropriate details object
+                switch (softwareId.ToLower())
+                {
+                    case "s1": // Excel
+                        task.Details = new ExcelTaskDetails
+                        {
+                            TaskDescription = record.TaskDescription,
+                            SheetName = record.SheetName,
+                            SelectTask = record.SelectTask,
+                            From = record.From,
+                            To = record.To,
+                            ResultCellLocation = record.ResultCellLocation,
+                            Hint = record.Hint,
+                            SkillName = record.SkillName,
+                            SkillScore = record.SkillScore,
+                         
+                        };
+                        break;
+
+                    case "s2": // Word
+                        task.Details = new WordTaskDetails
+                        {
+                            TaskDescription = record.TaskDescription,
+                            TaskLocation = record.TaskLocation,
+                            Hint = record.Hint,
+                            SkillName = record.SkillName,
+                            SkillScore = record.SkillScore,
+                         
+                        };
+                        break;
+
+                    // Add other cases as needed
+                    default:
+                        throw new NotSupportedException($"Software type {softwareId} not supported");
                 }
+
+                return task;
             }).ToList();
         }
-
         public async Task<List<JobTask>> GetTasksForActivityAsync(string activityId)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -191,11 +239,11 @@ namespace JobSimulation.DAL
                 throw new Exception("No valid table mapping found for the given SoftwareId.");
             }
 
-            // Replace {0} with the actual table name
             var query = $@"
         SELECT t.TaskId, t.SectionId, t.[Order], t.Description, 
             d.TaskDescription, d.SheetName, d.SelectTask, d.[From], d.[To], 
-            d.ResultCellLocation, d.Hint, d.SkillName, d.SkillScore
+            d.ResultCellLocation, d.Hint, d.SkillName, d.SkillScore,
+            d.TaskLocation  -- Added for Word tasks
         FROM Task t
         LEFT JOIN Activity a ON t.SectionId = a.SectionId
         LEFT JOIN SkillMatrix sm ON t.TaskId = sm.TaskId AND sm.ActivityId = a.ActivityId
@@ -205,27 +253,53 @@ namespace JobSimulation.DAL
 
             var results = await connection.QueryAsync(query, new { ActivityId = activityId });
 
-            return results.Select(record => new JobTask
+            return results.Select(record =>
             {
-                TaskId = record.TaskId,
-                SectionId = record.SectionId,
-                Order = record.Order,
-                Description = record.Description,
-                Details = new
+                var task = new JobTask
                 {
-                    TaskDescription = record.TaskDescription,
-                    SheetName = record.SheetName,
-                    SelectTask = record.SelectTask,
-                    From = record.From,
-                    To = record.To,
-                    ResultCellLocation = record.ResultCellLocation,
-                    Hint = record.Hint,
-                    SkillName = record.SkillName,
-                    SkillScore = record.SkillScore
+                    TaskId = record.TaskId,
+                    SectionId = record.SectionId,
+                    Order = record.Order,
+                    Description = record.Description
+                };
+
+                // Create the appropriate details object based on software type
+                switch (softwareId.ToLower())
+                {
+                    case "s1": // Excel
+                        task.Details = new ExcelTaskDetails
+                        {
+                            TaskDescription = record.TaskDescription,
+                            SheetName = record.SheetName,
+                            SelectTask = record.SelectTask,
+                            From = record.From,
+                            To = record.To,
+                            ResultCellLocation = record.ResultCellLocation,
+                            Hint = record.Hint,
+                            SkillName = record.SkillName,
+                            SkillScore = record.SkillScore
+                        };
+                        break;
+
+                    case "s2": // Word
+                        task.Details = new WordTaskDetails
+                        {
+                            TaskDescription = record.TaskDescription,
+                            TaskLocation = record.TaskLocation ?? string.Empty, // Handle NULL
+                            Hint = record.Hint,
+                            SkillName = record.SkillName,
+                            SkillScore = record.SkillScore
+                        };
+                        break;
+
+                    // Add cases for other software types as needed
+                    default:
+                        throw new NotSupportedException($"Software type {softwareId} not supported");
                 }
+
+                return task;
             }).ToList();
         }
-
         public async Task<int> GetElapsedTimeForTaskAsync(string activityId, string taskId)
         {
             using var connection = new SqlConnection(_connectionString);
