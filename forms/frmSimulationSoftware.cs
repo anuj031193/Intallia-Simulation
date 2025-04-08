@@ -431,15 +431,15 @@ namespace JobSimulation.Forms
         }
 
         public async Task UpdateSectionDataAsync(
-        List<JobTask> newTasks,
-        string newFilePath,
-        string newSectionId,
-        string newSoftwareId,
-        string newActivityId,
-        bool isLastSection,
-        Section newCurrentSection,
-        int newAttempt,
-        int newTaskIndex)
+     List<JobTask> newTasks,
+     string newFilePath,
+     string newSectionId,
+     string newSoftwareId,
+     string newActivityId,
+     bool isLastSection,
+     Section newCurrentSection,
+     int newAttempt,
+     int newTaskIndex)
         {
             await _simulationManager.UpdateSectionDataAsync(
                 newTasks,
@@ -451,18 +451,29 @@ namespace JobSimulation.Forms
                 newCurrentSection,
                 newTaskIndex
             );
+
             await UpdateSectionNavigationButtons(newSectionId);
 
             // Reset UI elements
             await LoadCurrentTask();
             label2.Text = $"Task {_simulationManager.CurrentTaskIndex + 1} of {_simulationManager.Tasks.Count}";
             lblTimer.Text = "Time: 0 sec";
+
+            // Unload task UI while waiting for Start
+            label1.Text = string.Empty;
+            label1.Visible = false;
+            label2.Text = string.Empty;
+            lblTimer.Text = "Time: 0 sec";
+            lblTimer.Visible = false;
+
             btnStart.Enabled = true;
             btnStart.Visible = true;
             btnSaveandNextSession.Visible = true;
             btnCompleteSimulation.Visible = isLastSection;
+
             DisableControls();
         }
+
 
 
 
