@@ -264,6 +264,18 @@ namespace JobSimulation.Managers
                 _progressTable.Rows.Add(newRow);
             }
 
+            byte[] fileBytes;
+
+            // 🔐 Open file with shared access to avoid lock issues
+            using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                fileBytes = new byte[stream.Length];
+                await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
+            }
+
+            string base64File = Convert.ToBase64String(fileBytes);
+            await _activityRepository.UpdateActivityStudentFileAsync(ActivityId, base64File, UserId);
+
             await _taskRepository.SaveCurrentTaskIndexAsync(
                 ActivityId,
                 Tasks[CurrentTaskIndex].TaskId,

@@ -596,5 +596,23 @@ namespace JobSimulation.DAL
         ORDER BY ModifyDate DESC",
                 new { UserId = userId, SimulationId = simulationId, SectionId = sectionId });
         }
+
+        public async Task UpdateActivityStudentFileAsync(string activityId, string studentFile, string userId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.ExecuteAsync(
+                @"UPDATE Activity 
+        SET StudentFile = @StudentFile, 
+            ModifyBy = @UserId, 
+            ModifyDate = @ModifyDate 
+        WHERE ActivityId = @ActivityId",
+                new
+                {
+                    ActivityId = activityId,
+                    StudentFile = studentFile,
+                    UserId = userId,
+                    ModifyDate = DateTime.UtcNow
+                });
+        }
     }
 }
