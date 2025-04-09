@@ -10,9 +10,10 @@ namespace JobSimulation.Models
     {
         Next,
         Previous,
-        Retry
+        Retry,
+        Complete
     }
-   public class SectionNavigationResult
+    public class SectionNavigationResult
     {
         public Section Section { get; set; }
         public string ActivityId { get; set; }

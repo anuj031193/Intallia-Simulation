@@ -5,18 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 //using JobSimulation.Extensions;
 
-//namespace JobSimulation.Extensions
-//{
-//    public static class StatusExtensions
-//    {
-//        public static bool In(this string status, params string[] validStatuses)
-//        {
-//            return validStatuses.Contains(status);
-//        }
-//    }
 
-
-//}
 namespace JobSimulation.Models
 {
     public static class StatusTypes

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
+using DocumentFormat.OpenXml.InkML;
 using JobSimulation.BLL;
 using JobSimulation.Models;
 using Activity = JobSimulation.Models.Activity;
@@ -407,21 +408,18 @@ namespace JobSimulation.DAL
             return null;
         }
 
-        public async Task<string> GenerateNewActivityIdAsync(string userId, string simulationId, string sectionId, bool increaseAttempt = false)
+        public async Task<string> GenerateNewActivityIdAsync(string userId, string simulationId, string sectionId)
         {
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
 
             var count = await connection.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM Activity WHERE UserId = @UserId AND SimulationId = @SimulationId AND SectionId = @SectionId",
+                @"SELECT COUNT(*) 
+          FROM Activity 
+          WHERE UserId = @UserId 
+            AND SimulationId = @SimulationId 
+            AND SectionId = @SectionId",
                 new { UserId = userId, SimulationId = simulationId, SectionId = sectionId });
-
-            if (increaseAttempt)
-            {
-                await connection.ExecuteAsync(
-                    "UPDATE Activity SET SectionAttempt = SectionAttempt + 1 WHERE UserId = @UserId AND SimulationId = @SimulationId AND SectionId = @SectionId",
-                    new { UserId = userId, SimulationId = simulationId, SectionId = sectionId });
-            }
 
             return $"{simulationId}-{sectionId}-{userId}-{DateTime.UtcNow:yyyyMMddHHmm}-A{count + 1}";
         }
@@ -545,18 +543,26 @@ namespace JobSimulation.DAL
             using var connection = new SqlConnection(_connectionString);
 
             var previousActivity = await GetLatestActivityAsync(userId, simulationId, sectionId);
-            if (previousActivity == null) throw new InvalidOperationException("No previous activity found");
+            if (previousActivity == null)
+                throw new InvalidOperationException("No previous activity found");
 
-            var newActivityId = await GenerateNewActivityIdAsync(userId, simulationId, sectionId, true);
+            // Get the current section attempt from the latest activity
+            int currentAttempt = previousActivity.SectionAttempt;
 
-            // Duplicate skill matrix entries but reset their status
+            // Just generate a new Activity ID — no side effects
+            var newActivityId = await GenerateNewActivityIdAsync(userId, simulationId, sectionId);
+
+            // Duplicate SkillMatrix entries, resetting completed status to visited
             await connection.ExecuteAsync(
-                @"INSERT INTO SkillMatrix (ActivityId, TaskId, Status, HintsChecked, TotalTime, 
-           AttemptstoSolve, CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt)
-          SELECT @NewActivityId, TaskId, 
-                 CASE WHEN Status = @Completed THEN @Visited ELSE Status END,
-                 HintsChecked, TotalTime, AttemptstoSolve, 
-                 CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt
+                @"INSERT INTO SkillMatrix (
+              ActivityId, TaskId, Status, HintsChecked, TotalTime, 
+              AttemptstoSolve, CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt
+          )
+          SELECT 
+              @NewActivityId, TaskId, 
+              CASE WHEN Status = @Completed THEN @Visited ELSE Status END,
+              HintsChecked, TotalTime, AttemptstoSolve, 
+              CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt
           FROM SkillMatrix
           WHERE ActivityId = @PreviousActivityId",
                 new
@@ -567,15 +573,15 @@ namespace JobSimulation.DAL
                     Visited = StatusTypes.Visited
                 });
 
-            // Create new activity with NotStarted status
+            // Create the new retry activity
             var newActivity = new Activity
             {
                 ActivityId = newActivityId,
                 UserId = userId,
                 SimulationId = simulationId,
                 SectionId = sectionId,
-                Status = StatusTypes.NotStarted, // Proper initial status
-                SectionAttempt = previousActivity.SectionAttempt + 1,
+                Status = StatusTypes.NotStarted,
+                SectionAttempt = currentAttempt + 1,
                 StudentFile = previousActivity.StudentFile,
                 CreateDate = DateTime.UtcNow,
                 ModifyDate = DateTime.UtcNow,
@@ -614,5 +620,28 @@ namespace JobSimulation.DAL
                     ModifyDate = DateTime.UtcNow
                 });
         }
+
+        public async Task<int> GetAttemptCountAsync(string userId, string simulationId, string sectionId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = @"
+        SELECT COUNT(*) 
+        FROM Activity 
+        WHERE UserId = @UserId 
+          AND SimulationId = @SimulationId 
+          AND SectionId = @SectionId";
+
+            using var command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@UserId", userId);
+            command.Parameters.AddWithValue("@SimulationId", simulationId);
+            command.Parameters.AddWithValue("@SectionId", sectionId);
+
+            var count = (int)await command.ExecuteScalarAsync();
+            return count;
+        }
+
+
     }
 }

@@ -50,6 +50,70 @@ namespace JobSimulation.Forms
             }
         }
 
+        //private void btnSelectSimulation_Click(object sender, EventArgs e)
+        //{
+        //    // Check if any row is selected in the DataGridView
+        //    if (dgvSimulations.SelectedRows.Count > 0)
+        //    {
+        //        // Retrieve the SimulationId of the selected row
+        //        string simulationId = dgvSimulations.SelectedRows[0].Cells["SimulationId"].Value.ToString();
+
+        //        // Retrieve the connection string
+        //        var connectionString = ConfigurationManager.ConnectionStrings["JobSimulationDB"].ConnectionString;
+
+        //        // Create instances of SectionRepository, FileService, TaskRepository, SkillMatrixRepository, and UserRepository
+        //        var sectionRepository = new SectionRepository(connectionString);
+        //        var fileService = new FileService();
+        //        var taskRepository = new TaskRepository(connectionString);
+        //        var skillMatrixRepository = new SkillMatrixRepository(connectionString);
+        //        var userRepository = new UserRepository(connectionString);
+
+        //        // Create an instance of SectionService, passing all required parameters in the correct order
+        //        var sectionService = new SectionService(sectionRepository, fileService, null, skillMatrixRepository, taskRepository);
+
+        //        // Create an instance of ActivityRepository, passing the connection string, sectionService, skillMatrixRepository, and taskRepository
+        //        var activityRepository = new ActivityRepository(
+        //            connectionString,
+        //            sectionService,
+        //            skillMatrixRepository,
+        //            taskRepository
+        //        );
+
+        //        // Update the SectionService instance to include the activityRepository
+        //        sectionService = new SectionService(sectionRepository, fileService, activityRepository, skillMatrixRepository, taskRepository);
+
+        //        // Since this is the initial section, we don't have a current section or activity ID yet
+        //        Section initialSection = null;
+        //        string initialActivityId = null;
+
+        //        // Create an instance of frmSectionLauncher, passing all required parameters including userRepository and userId
+        //        frmSectionLauncher sectionLauncher = new frmSectionLauncher(
+        //            sectionRepository,
+        //            fileService,
+        //            sectionService,
+        //            taskRepository,
+        //            skillMatrixRepository,
+        //            activityRepository,
+        //            userRepository,
+        //            simulationId,
+        //            _userId, // Ensure _userId is correctly passed
+        //            initialSection,
+        //            initialActivityId
+        //        );
+
+        //        // Show the frmSectionLauncher form
+        //        sectionLauncher.Show();
+
+        //        // Hide the current form
+        //        this.Hide();
+        //    }
+        //    else
+        //    {
+        //        // Display a message if no simulation is selected
+        //        MessageBox.Show("Please select a simulation.");
+        //    }
+        //}
+
         private void btnSelectSimulation_Click(object sender, EventArgs e)
         {
             // Check if any row is selected in the DataGridView
@@ -82,6 +146,9 @@ namespace JobSimulation.Forms
                 // Update the SectionService instance to include the activityRepository
                 sectionService = new SectionService(sectionRepository, fileService, activityRepository, skillMatrixRepository, taskRepository);
 
+                // Create an instance of TaskService
+                var taskService = new TaskService(sectionRepository, skillMatrixRepository, taskRepository);
+
                 // Since this is the initial section, we don't have a current section or activity ID yet
                 Section initialSection = null;
                 string initialActivityId = null;
@@ -95,6 +162,7 @@ namespace JobSimulation.Forms
                     skillMatrixRepository,
                     activityRepository,
                     userRepository,
+                    taskService,
                     simulationId,
                     _userId, // Ensure _userId is correctly passed
                     initialSection,
