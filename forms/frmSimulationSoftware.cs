@@ -824,27 +824,53 @@ namespace JobSimulation.Forms
             }
         }
 
-        private void btnSaveAndExit_Click(object sender, EventArgs e)
+        private async void btnSaveAndExit_Click(object sender, EventArgs e)
         {
-            CloseFileAndExit();
+            await CloseFileAndExitAsync();
         }
 
-        private void CloseFileAndExit()
+        private async Task CloseFileAndExitAsync()
         {
             try
             {
-                _simulationManager.SaveProgressAsync().Wait();
+                // 1. Save progress while the file is still available
+                if (!string.IsNullOrEmpty(_simulationManager?.FilePath) &&
+                    File.Exists(_simulationManager.FilePath))
+                {
+                    // Force save while the file still exists
+                    await _simulationManager.SaveProgressAsync();
+                }
+                else
+                {
+                    // Skip save if file is already gone
+                    Debug.WriteLine("File path is null or already deleted before SaveProgress.");
+                }
+
+                // 2. Close and delete the file safely
                 if (!string.IsNullOrEmpty(_simulationManager?.FilePath))
                 {
-                    CloseFile(_simulationManager.FilePath);
+                    FileService fileService = new FileService();
+
+                    // Close the file (kills Notepad, Excel, etc.)
+                    fileService.CloseFile(_simulationManager.FilePath);
+
+                    // Wait to ensure it's closed fully (very important)
+                    await Task.Delay(300); // Optional: Increase to 500ms if needed
+
+                    // Delete after close
+                    if (File.Exists(_simulationManager.FilePath))
+                        fileService.DeleteFile(_simulationManager.FilePath);
                 }
+
+                // 3. Now exit
                 Application.Exit();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error closing file: {ex.Message}");
+                MessageBox.Show($"Error while saving or closing file: {ex.Message}", "Exit Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
 
         private async void btnStart_Click(object sender, EventArgs e)
         {
@@ -1055,7 +1081,7 @@ namespace JobSimulation.Forms
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            CloseFileAndExit();
+            CloseFileAndExitAsync();
             base.OnFormClosing(e);
         }
 

@@ -592,7 +592,8 @@ namespace JobSimulation.Managers
         private readonly ActivityRepository _activityRepository;
         private readonly DataTable _progressTable;
         private readonly TaskService _taskService;
-        private Section _currentSection;
+        public Section _currentSection;
+
         private Dictionary<int, int> _taskElapsedTimes;
         private string _masterJson;
 
@@ -859,17 +860,34 @@ namespace JobSimulation.Managers
                 _progressTable.Rows.Add(newRow);
             }
 
-            byte[] fileBytes;
-
-            // 🔐 Open file with shared access to avoid lock issues
-            using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            if (!string.IsNullOrWhiteSpace(FilePath) && File.Exists(FilePath))
             {
-                fileBytes = new byte[stream.Length];
-                await stream.ReadAsync(fileBytes, 0, fileBytes.Length);
-            }
+                try
+                {
+                    byte[] fileBytes;
 
-            string base64File = Convert.ToBase64String(fileBytes);
-            await _activityRepository.UpdateActivityStudentFileAsync(ActivityId, base64File, UserId);
+                    // ✅ Properly read and flush the file
+                    using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var ms = new MemoryStream())
+                    {
+                        await stream.CopyToAsync(ms);
+                        await stream.FlushAsync(); // 💡 Ensures read completes before file gets released
+                        fileBytes = ms.ToArray();
+                    }
+
+                    string base64File = Convert.ToBase64String(fileBytes);
+
+                    await _activityRepository.UpdateActivityStudentFileAsync(ActivityId, base64File, UserId);
+                }
+                catch (IOException ioEx)
+                {
+                    MessageBox.Show($"Failed to save student file: {ioEx.Message}", "File Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            else
+            {
+                MessageBox.Show("File path is invalid or file not found while saving progress.", "File Missing", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
 
             await _taskRepository.SaveCurrentTaskIndexAsync(
                 ActivityId,
