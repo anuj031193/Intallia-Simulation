@@ -81,7 +81,33 @@ namespace JobSimulation.DAL
 
             return null;
         }
+        public async Task<bool> HasNextSectionAsync(string simulationId, int currentOrder)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
 
+            var query = "SELECT COUNT(*) FROM Section WHERE SimulationId = @SimulationId AND [Order] > @CurrentOrder";
+            using var command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@SimulationId", simulationId);
+            command.Parameters.AddWithValue("@CurrentOrder", currentOrder);
+
+            var count = (int)await command.ExecuteScalarAsync();
+            return count > 0;
+        }
+
+        public async Task<bool> HasPreviousSectionAsync(string simulationId, int currentOrder)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var query = "SELECT COUNT(*) FROM Section WHERE SimulationId = @SimulationId AND [Order] < @CurrentOrder";
+            using var command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@SimulationId", simulationId);
+            command.Parameters.AddWithValue("@CurrentOrder", currentOrder);
+
+            var count = (int)await command.ExecuteScalarAsync();
+            return count > 0;
+        }
         public async Task<Section> GetSectionByIdAsync(string sectionId)
         {
             using var connection = new SqlConnection(_connectionString);

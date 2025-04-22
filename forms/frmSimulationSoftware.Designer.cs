@@ -251,6 +251,7 @@ namespace JobSimulation.Forms
             btnSaveandNextSession.Name = "btnSaveandNextSession";
             btnSaveandNextSession.UseVisualStyleBackColor = false;
             btnSaveandNextSession.Click += btnSaveandNextSession_Click;
+            btnSaveandNextSession.Enabled = false; // Ensure this is disabled initially
             // 
             // btnSaveandPreviousSession
             // 
@@ -259,6 +260,7 @@ namespace JobSimulation.Forms
             btnSaveandPreviousSession.Name = "btnSaveandPreviousSession";
             btnSaveandPreviousSession.UseVisualStyleBackColor = false;
             btnSaveandPreviousSession.Click += btnSaveandPreviousSession_Click;
+            btnSaveandPreviousSession.Enabled = false; // Ensure this is disabled initially
             // 
             // btnSaveandExit
             // 
@@ -275,6 +277,8 @@ namespace JobSimulation.Forms
             btnCompleteSimulation.Name = "btnCompleteSimulation";
             btnCompleteSimulation.UseVisualStyleBackColor = false;
             btnCompleteSimulation.Click += btnCompleteSimulation_Click;
+            btnCompleteSimulation.Visible = false; // Initially hidden
+            btnCompleteSimulation.Enabled = false; // Initially disabled
             // 
             // frmSimulationSoftware
             // 
@@ -521,17 +525,7 @@ namespace JobSimulation.Forms
         }
 
 
-        private void DisableAllButtonsExceptStartAndClose()
-        {
-            foreach (Control control in this.Controls)
-            {
-                if (control is Button && control != btnStart && control != btnClose)
-                {
-                    control.Enabled = false; // Disable all buttons except Start and Close
-                }
-            }
-        }
-
+    
 
 
     }
