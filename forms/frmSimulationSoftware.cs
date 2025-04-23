@@ -310,7 +310,7 @@ namespace JobSimulation.Forms
 
                 // Ensure the section does not change when clicking the Check Answer button
                 // Update the status of the SkillMatrix table to Completed and increment TaskAttempt
-                await _simulationManager.UpdateSkillMatrixStatusAndAttempt(_simulationManager.CurrentTaskIndex);
+                //await _simulationManager.UpdateSkillMatrixStatusAndAttempt(_simulationManager.CurrentTaskIndex);
 
                 // Check if all tasks are completed and handle accordingly
                 //await CheckTaskCompletion(isLastTaskInSection: false);

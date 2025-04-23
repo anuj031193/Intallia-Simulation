@@ -459,24 +459,6 @@ namespace JobSimulation.Forms
         }
 
         // Example of LoadTaskDetailsForSectionAsync method
-        private async Task<(List<JobTask> tasks, int currentTaskIndex, int timeElapsed)> LoadTaskDetailsForSectionAsync(string sectionId, string activityId)
-        {
-            var tasks = await _sectionService.GetAllTasksForSectionAsync(sectionId, _userId);
-            if (tasks == null || tasks.Count == 0)
-            {
-                return (new List<JobTask>(), 0, 0);
-            }
-
-            var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(activityId);
-            var incompleteTasks = tasks
-                .Where(t => skillMatrixEntries.Any(sm => sm.TaskId == t.TaskId && sm.Status != StatusTypes.Completed))
-                .ToList();
-
-            int currentTaskIndex = await GetCurrentTaskIndexAsync(incompleteTasks, tasks);
-            int timeElapsed = await _taskRepository.GetElapsedTimeForTaskAsync(activityId, tasks[currentTaskIndex].TaskId);
-
-            return (tasks, currentTaskIndex, timeElapsed);
-        }
 
         private async Task<SectionNavigationResult> GetTargetSectionAsync(SectionNavigationAction action)
         {
@@ -534,25 +516,6 @@ namespace JobSimulation.Forms
             return lastTask != null ? tasks.FindIndex(t => t.TaskId == lastTask.TaskId) : 0;
         }
 
-        private async Task<int> GetCurrentTaskIndexAsync(List<JobTask> incompleteTasks, List<JobTask> allTasks)
-        {
-            var inProgressTasks = new List<JobTask>();
-            foreach (var task in incompleteTasks)
-            {
-                var skillMatrixEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(_activityId, task.TaskId);
-                if (skillMatrixEntry?.Status == StatusTypes.InProgress)
-                {
-                    inProgressTasks.Add(task);
-                }
-            }
-
-            if (inProgressTasks.Count > 0)
-                return allTasks.IndexOf(inProgressTasks.First());
-            if (incompleteTasks.Count > 0)
-                return allTasks.IndexOf(incompleteTasks.First());
-
-            return 0;
-        }
 
         private void HandleError(string context, Exception ex)
         {
@@ -564,6 +527,9 @@ namespace JobSimulation.Forms
         {
             MessageBox.Show("Simulation completed. Logging out...");
             this.Close();
+            // Show login form
+            var loginForm = new frmUserLogin(_userRepository);
+            loginForm.Show();
         }
     }
 }

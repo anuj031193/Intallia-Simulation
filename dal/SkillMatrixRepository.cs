@@ -89,9 +89,9 @@ namespace JobSimulation.DAL
         ELSE
         BEGIN
             INSERT INTO SkillMatrix (ActivityId, TaskId, HintsChecked, TotalTime, AttemptstoSolve, Status, 
-                                   CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt)
-            VALUES (@ActivityId, @TaskId, @HintsChecked, @TotalTime, @AttemptstoSolve, 
-                   @Status, @CreateBy, @CreateDate, @ModifyBy, @ModifyDate, @TaskAttempt)
+                                     CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt)
+            VALUES (@ActivityId, @TaskId, @HintsChecked, @TotalTime, @AttemptstoSolve, @Status, 
+                    @CreateBy, @CreateDate, @ModifyBy, @ModifyDate, @TaskAttempt)
         END";
 
             await connection.ExecuteAsync(query, new
@@ -102,14 +102,13 @@ namespace JobSimulation.DAL
                 skillMatrix.TotalTime,
                 skillMatrix.AttemptstoSolve,
                 skillMatrix.Status,
-                CreateBy = skillMatrix.CreateBy,
-                CreateDate = ValidateDateTime(skillMatrix.CreateDate),
+                CreateBy = skillMatrix.CreateBy ?? userId, // Set CreateBy for new records
+                CreateDate = skillMatrix.CreateDate != default(DateTime) ? skillMatrix.CreateDate : DateTime.Now, // Set CreateDate for new records
                 ModifyBy = userId,
-                ModifyDate = ValidateDateTime(skillMatrix.ModifyDate),
+                ModifyDate = DateTime.Now, // Use local time for ModifyDate
                 skillMatrix.TaskAttempt
             });
         }
-
         public async Task UpdateSkillMatrixAsync(SkillMatrix skillMatrix, string userId)
         {
             using var connection = new SqlConnection(_connectionString);

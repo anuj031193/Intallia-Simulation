@@ -157,38 +157,51 @@ namespace JobSimulation.Managers
 
         public async Task<string> CheckAnswerAsync(int taskIndex)
         {
+            // Retrieve the current task
             var currentTask = Tasks[taskIndex];
+
+            // Validate the task to check if the answer is correct
             bool isCorrect = ValidateTask(currentTask);
 
+            // Get the existing entry from the SkillMatrix or initialize default values
             var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, currentTask.TaskId);
-            int taskAttempt = (existingEntry?.TaskAttempt ?? 0) + 1;
-            int attempts = existingEntry?.AttemptstoSolve ?? 0;
+            int taskAttempt = existingEntry?.TaskAttempt ?? 0; // Default to 0 if no entry exists
+            int attemptsToSolve = existingEntry?.AttemptstoSolve ?? 0; // Default to 0 if no entry exists
 
-            // Only update AttemptsToSolve if this is the first correct answer
-            if (isCorrect && existingEntry?.Status != StatusTypes.Completed)
+            // Increment TaskAttempt for every click of btnCheckAnswer
+            taskAttempt++;
+
+            // Update AttemptsToSolve only for the first correct answer
+            if (isCorrect && (existingEntry?.AttemptstoSolve ?? 0) == 0)
             {
-                attempts = taskAttempt; // Store the current attempt number
+                attemptsToSolve = taskAttempt; // Set AttemptsToSolve to the current TaskAttempt
             }
 
+            // Prepare the updated SkillMatrix entry
             var skillMatrix = new SkillMatrix
             {
                 ActivityId = ActivityId,
                 TaskId = currentTask.TaskId,
-                Status = isCorrect ? StatusTypes.Completed : StatusTypes.InComplete,
-                AttemptstoSolve = attempts, // This now stores the attempt number when first correct
-                TaskAttempt = taskAttempt,  // This increments with every check
+                Status = StatusTypes.Completed, // Always mark the status as Completed
+                AttemptstoSolve = attemptsToSolve, // Retain the first correct attempt value
+                TaskAttempt = taskAttempt,         // Increment with each click of btnCheckAnswer
                 ModifyBy = UserId,
-                ModifyDate = DateTime.UtcNow,
+                ModifyDate = DateTime.Now, // Use local time
+                CreateBy = existingEntry?.CreateBy ?? UserId, // Preserve existing CreateBy or set for new entries
+                CreateDate = existingEntry?.CreateDate ?? DateTime.Now, // Preserve existing CreateDate or set for new entries
                 HintsChecked = existingEntry?.HintsChecked ?? 0,
                 TotalTime = _taskElapsedTimes[taskIndex]
             };
 
+            // Save the updated SkillMatrix entry
             await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
+
+            // Update the activity status to reflect the progress
             await UpdateActivityStatusAsync();
 
-            return isCorrect ? "Correct!" : "Incorrect, please try again.";
+            // Return feedback to the user
+            return isCorrect ? "Correct!" : "Incorrect!";
         }
-
         private bool ValidateTask(JobTask task)
         {
             var taskSubmission = new TaskSubmission
@@ -550,33 +563,6 @@ namespace JobSimulation.Managers
         }
 
 
-        //public async Task<int> GetElapsedTimeForTaskAsync(string simulationId, int taskIndex)
-        //{
-        //    // Fetch the elapsed time for the task from the _taskElapsedTimes dictionary.
-        //    // If no time exists, return 0.
-        //    return await Task.FromResult(
-        //        _taskElapsedTimes.TryGetValue(taskIndex, out var elapsedTime) ? elapsedTime : 0
-        //    );
-        //}
-
-        //public async Task SaveElapsedTimeForTaskAsync(string simulationId, int taskIndex, int elapsedTime)
-        //{
-        //    // Save the elapsed time for the task to the _taskElapsedTimes dictionary.
-        //    if (_taskElapsedTimes.ContainsKey(taskIndex))
-        //    {
-        //        _taskElapsedTimes[taskIndex] = elapsedTime;
-        //    }
-        //    else
-        //    {
-        //        _taskElapsedTimes.Add(taskIndex, elapsedTime);
-        //    }
-
-        //    // Optionally, update the SkillMatrix or persistent storage here.
-        //    if (taskIndex >= 0 && taskIndex < Tasks.Count)
-        //    {
-        //        await UpdateSkillMatrixAsync(Tasks[taskIndex]);
-        //    }
-        //}
     }
 }
 
