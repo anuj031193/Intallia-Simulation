@@ -100,7 +100,7 @@ namespace JobSimulation.Managers
                     _taskElapsedTimes[CurrentTaskIndex] = existingEntry.TotalTime;
             }
 
-            // 🆕 Load the master data for the newly updated section
+            //// 🆕 Load the master data for the newly updated section
             LoadMasterData();
         }
 
@@ -118,17 +118,6 @@ namespace JobSimulation.Managers
             }
         }
 
-        public async Task IncrementTimeElapsedAsync()
-        {
-            if (CurrentTaskIndex < 0 || CurrentTaskIndex >= Tasks.Count) return;
-
-            if (_taskElapsedTimes.ContainsKey(CurrentTaskIndex))
-                _taskElapsedTimes[CurrentTaskIndex]++;
-            else
-                _taskElapsedTimes[CurrentTaskIndex] = 1;
-
-            await UpdateSkillMatrixAsync(Tasks[CurrentTaskIndex]);
-        }
 
         private async Task UpdateSkillMatrixAsync(JobTask currentTask)
         {
@@ -136,23 +125,40 @@ namespace JobSimulation.Managers
             if (existingEntry != null)
             {
                 existingEntry.TotalTime = _taskElapsedTimes[CurrentTaskIndex];
-                await _skillMatrixRepository.SaveSkillMatrixAsync(existingEntry, UserId);
+             await _skillMatrixRepository.UpsertSkillMatrixAsync(existingEntry, UserId);
             }
         }
 
         public void LoadMasterData()
         {
-            var validationForm = ValidationFormFactory.CreateValidationForm(new TaskSubmission
+            try
             {
-                SectionId = _currentSection.SectionId,
-                SoftwareId = _currentSection.SoftwareId // Assuming softwareId is the filePath
-            }, _fileService); // Pass the _fileService instance here
-            _masterJson = validationForm.GetMasterJsonForSection(_currentSection.SectionId);
-        }
+                // Create a TaskSubmission object for the current section
+                var taskSubmission = new TaskSubmission
+                {
+                    SectionId = _currentSection.SectionId,
+                    SimulationId = _currentSection.SimulationId, // Include the SimulationId
+                    SoftwareId = _currentSection.SoftwareId // Use the SoftwareId from the current section
+                };
 
-        public async Task SaveCurrentStateAsync()
-        {
-            await SaveProgressAsync();
+                // Create the validation form using the factory
+                var validationForm = ValidationFormFactory.CreateValidationForm(taskSubmission, _fileService);
+
+                // Fetch the master JSON for the current section
+                _masterJson = validationForm.GetMasterJsonForSection(_currentSection.SectionId);
+
+                if (string.IsNullOrEmpty(_masterJson))
+                {
+                    MessageBox.Show("Master data could not be loaded. Please verify the configuration.",
+                                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Handle exceptions gracefully and provide feedback
+                MessageBox.Show($"Error loading master data: {ex.Message}", "Error",
+                                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         public async Task<string> CheckAnswerAsync(int taskIndex)
@@ -194,7 +200,7 @@ namespace JobSimulation.Managers
             };
 
             // Save the updated SkillMatrix entry
-            await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
+            await _skillMatrixRepository.UpsertSkillMatrixAsync(skillMatrix, UserId);
 
             // Update the activity status to reflect the progress
             await UpdateActivityStatusAsync();
@@ -220,35 +226,13 @@ namespace JobSimulation.Managers
         public async Task UpdateActivityStatusAsync()
         {
             var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(ActivityId);
-            var latestStatuses = skillMatrixEntries
-                .GroupBy(e => e.TaskId)
-                .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.ModifyDate).First().Status);
 
-            int completedCount = latestStatuses.Count(kv => kv.Value == StatusTypes.Completed);
+            int completedCount = skillMatrixEntries.Count(e => e.Status == StatusTypes.Completed);
             int totalTasks = Tasks.Count;
-            double completionRatio = (double)completedCount / totalTasks;
 
-            // Determine Status (Section Progress)
-            string newStatus;
-            if (completedCount == totalTasks)
-            {
-                newStatus = StatusTypes.Completed;
-            }
-            else if (completionRatio >= 0.7)
-            {
-                newStatus = StatusTypes.PartiallyCompleted;
-            }
-            else if (completedCount > 0)
-            {
-                newStatus = StatusTypes.InProgress;
-            }
-            else
-            {
-                newStatus = StatusTypes.NotStarted;
-            }
+            string newStatus = CalculateProgressStatus(completedCount, totalTasks);
 
-            // Calculate Result (Performance)
-            string result = await _activityRepository.CalculateResultAsync(ActivityId);
+            string result = CalculateResult(skillMatrixEntries);
 
             await _activityRepository.UpdateActivityAsync(new Activity
             {
@@ -259,7 +243,6 @@ namespace JobSimulation.Managers
                 ModifyDate = DateTime.UtcNow
             });
         }
-
         public async Task<Activity> GetActivityAsync()
         {
             return await _activityRepository.GetByIdAsync(ActivityId);
@@ -269,75 +252,28 @@ namespace JobSimulation.Managers
             await _activityRepository.UpdateAsync(activity);
         }
 
-        public async Task UpdateSkillMatrixStatusAndAttempt(int taskIndex)
-        {
-            var currentTask = Tasks[taskIndex];
-            var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, currentTask.TaskId);
-            int taskAttempt = (existingEntry?.TaskAttempt ?? 0) + 1;
-
-            var skillMatrix = new SkillMatrix
-            {
-                ActivityId = ActivityId,
-                TaskId = currentTask.TaskId,
-                Status = StatusTypes.Completed, // Mark status as completed regardless of correctness
-                TaskAttempt = taskAttempt,  // Increment TaskAttempt
-                ModifyBy = UserId,
-                ModifyDate = DateTime.UtcNow,
-                HintsChecked = existingEntry?.HintsChecked ?? 0,
-                TotalTime = _taskElapsedTimes[taskIndex]
-            };
-
-            await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
-        }
         public async Task SaveProgressAsync()
         {
             var existingRow = _progressTable.Rows.Find(new object[] { _currentSection.SectionId, UserId });
-
-            if (existingRow != null)
-            {
-                existingRow["TaskIndex"] = CurrentTaskIndex;
-                existingRow["TimeElapsed"] = _taskElapsedTimes[CurrentTaskIndex];
-                existingRow["FilePath"] = FilePath;
-            }
-            else
-            {
-                var newRow = _progressTable.NewRow();
-                newRow["SectionId"] = _currentSection.SectionId;
-                newRow["UserId"] = UserId;
-                newRow["TaskIndex"] = CurrentTaskIndex;
-                newRow["TimeElapsed"] = _taskElapsedTimes[CurrentTaskIndex];
-                newRow["IsCompleted"] = false;
-                newRow["FilePath"] = FilePath;
-                _progressTable.Rows.Add(newRow);
-            }
 
             if (!string.IsNullOrWhiteSpace(FilePath) && File.Exists(FilePath))
             {
                 try
                 {
                     byte[] fileBytes;
-
-                    // ✅ Properly read and flush the file
                     using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     using (var ms = new MemoryStream())
                     {
                         await stream.CopyToAsync(ms);
-                        await stream.FlushAsync(); // 💡 Ensures read completes before file gets released
                         fileBytes = ms.ToArray();
                     }
-
                     string base64File = Convert.ToBase64String(fileBytes);
-
                     await _activityRepository.UpdateActivityStudentFileAsync(ActivityId, base64File, UserId);
                 }
                 catch (IOException ioEx)
                 {
                     MessageBox.Show($"Failed to save student file: {ioEx.Message}", "File Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-            }
-            else
-            {
-                MessageBox.Show("File path is invalid or file not found while saving progress.", "File Missing", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
 
             await _taskRepository.SaveCurrentTaskIndexAsync(
@@ -347,7 +283,6 @@ namespace JobSimulation.Managers
                 _currentSection.SectionId,
                 UserId);
         }
-
         public async Task<JobTask> LoadTaskAsync(int taskIndex)
         {
             if (taskIndex < 0 || taskIndex >= Tasks.Count) return null;
@@ -359,25 +294,6 @@ namespace JobSimulation.Managers
             return task;
         }
 
-        private async Task MarkTaskAsVisited(int taskIndex)
-        {
-            var task = Tasks[taskIndex];
-            var existing = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, task.TaskId);
-
-            if (existing == null)
-            {
-                await _skillMatrixRepository.SaveSkillMatrixAsync(new SkillMatrix
-                {
-                    ActivityId = ActivityId,
-                    TaskId = task.TaskId,
-                    Status = StatusTypes.Visited,
-                    HintsChecked = 0,
-                    TotalTime = 0,
-                    CreateBy = UserId,
-                    ModifyBy = UserId
-                }, UserId);
-            }
-        }
 
         public async Task<string> GetHintAsync(int taskIndex)
         {
@@ -437,9 +353,9 @@ namespace JobSimulation.Managers
                         StatusTypes.InComplete :
                         StatusTypes.Visited,
                 CreateBy = UserId,
-                CreateDate = DateTime.UtcNow,
+                CreateDate = DateTime.Now,
                 ModifyBy = UserId,
-                ModifyDate = DateTime.UtcNow,
+                ModifyDate = DateTime.Now,
                 TaskAttempt = taskAttempt
             };
 
@@ -454,65 +370,16 @@ namespace JobSimulation.Managers
                 Status = skillMatrix.Status,
                 SectionAttempt = Attempt,
                 StudentFile = Convert.ToBase64String(fileBytes),
-                CreateDate = DateTime.UtcNow,
-                ModifyDate = DateTime.UtcNow,
+                CreateDate = DateTime.Now,
+                ModifyDate = DateTime.Now,
                 CreateBy = UserId,
                 ModifyBy = UserId,
                 Result = calculatedResult
             }, calculatedResult);
 
-            await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
+            await _skillMatrixRepository.UpsertSkillMatrixAsync(skillMatrix, UserId);
         }
 
-        public async Task SaveTaskProgressAsync(bool isTaskCompleted)
-        {
-            var currentTask = Tasks[CurrentTaskIndex];
-            var existingSkillMatrix = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, currentTask.TaskId);
-
-            var skillMatrix = new SkillMatrix
-            {
-                ActivityId = ActivityId,
-                TaskId = currentTask.TaskId,
-                HintsChecked = existingSkillMatrix?.HintsChecked ?? 0,
-                TotalTime = _taskElapsedTimes[CurrentTaskIndex],
-                AttemptstoSolve = isTaskCompleted ? 1 : existingSkillMatrix?.AttemptstoSolve + 1 ?? 1,
-                Status = isTaskCompleted ? StatusTypes.Completed : StatusTypes.InComplete,
-                CreateBy = UserId,
-                CreateDate = DateTime.UtcNow,
-                ModifyBy = UserId,
-                ModifyDate = DateTime.UtcNow,
-                TaskAttempt = existingSkillMatrix?.TaskAttempt + 1 ?? 1
-            };
-
-            await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
-            MessageBox.Show("Progress saved successfully.");
-        }
-
-        private string CalculateResultStatus(List<JobTask> tasks, Dictionary<string, string> taskStatuses)
-        {
-            int completedCount = tasks.Count(t => taskStatuses.ContainsKey(t.TaskId) && taskStatuses[t.TaskId] == StatusTypes.Completed);
-            double ratio = (double)completedCount / tasks.Count;
-            return ratio switch
-            {
-                >= 0.9 => "Mastered",
-                >= 0.7 => "Proficient",
-                >= 0.4 => "Developing",
-                _ => "Needs Improvement"
-            };
-        }
-
-        private string DetermineSectionStatus(List<JobTask> tasks, Dictionary<string, SkillMatrix> taskStatuses)
-        {
-            int completedCount = tasks.Count(t => taskStatuses.ContainsKey(t.TaskId) && taskStatuses[t.TaskId].Status == StatusTypes.Completed);
-            double ratio = (double)completedCount / tasks.Count;
-            return ratio switch
-            {
-                1 => StatusTypes.Completed,
-                >= 0.7 => StatusTypes.PartiallyCompleted,
-                > 0 => StatusTypes.InProgress,
-                _ => StatusTypes.NotStarted
-            };
-        }
 
         public async Task<bool> AreAllTasksCompleted()
         {
@@ -523,28 +390,6 @@ namespace JobSimulation.Managers
                     e.Status == StatusTypes.Completed));
         }
 
-        public async Task CompleteAllTasks()
-        {
-            foreach (var task in Tasks)
-            {
-                var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, task.TaskId);
-
-                var skillMatrix = new SkillMatrix
-                {
-                    ActivityId = ActivityId,
-                    TaskId = task.TaskId,
-                    Status = StatusTypes.Completed,
-                    AttemptstoSolve = existingEntry?.AttemptstoSolve ?? 1,
-                    TaskAttempt = existingEntry?.TaskAttempt ?? 1,
-                    TotalTime = _taskElapsedTimes[Tasks.IndexOf(task)],
-                    ModifyDate = DateTime.UtcNow
-                };
-
-                await _skillMatrixRepository.SaveSkillMatrixAsync(skillMatrix, UserId);
-            }
-
-            await UpdateActivityStatusAsync();
-        }
 
         public void MoveToNextTask()
         {
@@ -563,10 +408,402 @@ namespace JobSimulation.Managers
         }
 
 
+        public async Task MarkUnvisitedTasksAsInCompleted()
+        {
+            // Fetch all activities (sections) for the simulation
+            var allActivities = await GetAllActivitiesForSimulationAsync();
+
+            foreach (var activity in allActivities)
+            {
+                // Fetch all tasks for this activity's section
+                var tasks = await _taskRepository.GetTasksForSectionAsync(activity.SectionId);
+
+                // Fetch all skill matrix entries for this activity
+                var skillMatrices = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(activity.ActivityId);
+
+                foreach (var task in tasks)
+                {
+                    var existingEntry = skillMatrices.FirstOrDefault(sm => sm.TaskId == task.TaskId);
+
+                    if (existingEntry == null)
+                    {
+                        // Task was never visited, mark as Incomplete
+                        var newEntry = new SkillMatrix
+                        {
+                            ActivityId = activity.ActivityId,
+                            TaskId = task.TaskId,
+                            Status = StatusTypes.InComplete,
+                            AttemptstoSolve = 0,
+                            TaskAttempt = 0,
+                            HintsChecked = 0,
+                            TotalTime = 0,
+                            CreateBy = UserId,
+                            CreateDate = DateTime.Now,
+                            ModifyBy = UserId,
+                            ModifyDate = DateTime.Now
+                        };
+                        await _skillMatrixRepository.UpsertSkillMatrixAsync(newEntry, UserId);
+                    }
+                    else if (existingEntry.Status == StatusTypes.Visited)
+                    {
+                        // Retain the status for visited tasks
+                        existingEntry.ModifyBy = UserId;
+                        existingEntry.ModifyDate = DateTime.Now;
+                        await _skillMatrixRepository.UpsertSkillMatrixAsync(existingEntry, UserId);
+                    }
+                }
+            }
+        }
+        public async Task<string> CalculateSectionResultAsync(string activityId)
+        {
+            // Fetch the activity and related data
+            var activity = await _activityRepository.GetByIdAsync(activityId);
+            var skillMatrices = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(activityId);
+            var tasks = await _taskRepository.GetTasksForSectionAsync(activity.SectionId);
+
+            // If no tasks exist or no skill matrix entries are found, return "Needs Improvement"
+            if (!tasks.Any() || !skillMatrices.Any())
+                return StatusTypes.NeedsImprovement;
+
+            // Aggregate task performance metrics
+            var taskMetrics = new List<(int AttemptsToSolve, int HintsChecked, int TotalTime)>();
+
+            foreach (var task in tasks)
+            {
+                var taskMatrix = skillMatrices
+                    .Where(sm => sm.TaskId == task.TaskId)
+                    .OrderByDescending(sm => sm.ModifyDate)
+                    .FirstOrDefault();
+
+                // Skip unvisited or incomplete tasks
+                if (taskMatrix == null || !taskMatrix.IsCorrect)
+                    return StatusTypes.NeedsImprovement;
+
+                taskMetrics.Add((
+                    taskMatrix.AttemptstoSolve,
+                    taskMatrix.HintsChecked,
+                    taskMatrix.TotalTime
+                ));
+            }
+
+            // Calculate the performance grade for the section
+            var result = CalculatePerformanceGrade(taskMetrics);
+
+            // Update the result in the Activity table
+            activity.Result = result;
+            activity.ModifyDate = DateTime.UtcNow;
+            await _activityRepository.UpdateActivityAsync(activity);
+
+            return result;
+        }
+
+        private string CalculatePerformanceGrade(List<(int AttemptsToSolve, int HintsChecked, int TotalTime)> metrics)
+        {
+            var performanceScore = metrics.Average(m =>
+                (m.AttemptsToSolve == 0 ? 0.4 : 1 / (float)m.AttemptsToSolve) * 40 + // Score for attempts
+                (1 - (float)m.HintsChecked / 5) * 30 + // Score for hints
+                (1 - (float)m.TotalTime / 600) * 30   // Score for time
+            );
+
+            return performanceScore switch
+            {
+                >= 90 => StatusTypes.Mastered,
+                >= 75 => StatusTypes.Proficient,
+                >= 50 => StatusTypes.Developing,
+                _ => StatusTypes.NeedsImprovement
+            };
+        }
+        public async Task SaveActivityAsync(Activity activity)
+        {
+            if (activity == null) throw new ArgumentNullException(nameof(activity));
+            await _activityRepository.SaveActivityAsync(activity);
+        }
+
+        private string CalculateProgressStatus(int completedCount, int totalTasks)
+        {
+            double completionRatio = (double)completedCount / totalTasks;
+
+            return completedCount switch
+            {
+                _ when completedCount == totalTasks => StatusTypes.Completed,
+                _ when completionRatio >= 0.7 => StatusTypes.PartiallyCompleted,
+                _ when completedCount > 0 => StatusTypes.InProgress,
+                _ => StatusTypes.NotStarted
+            };
+        }
+
+        private void UpsertProgressRow(string sectionId, int taskIndex, int timeElapsed, string filePath)
+        {
+            var existingRow = _progressTable.Rows.Find(new object[] { sectionId, UserId });
+
+            if (existingRow != null)
+            {
+                existingRow["TaskIndex"] = taskIndex;
+                existingRow["TimeElapsed"] = timeElapsed;
+                existingRow["FilePath"] = filePath;
+            }
+            else
+            {
+                var newRow = _progressTable.NewRow();
+                newRow["SectionId"] = sectionId;
+                newRow["UserId"] = UserId;
+                newRow["TaskIndex"] = taskIndex;
+                newRow["TimeElapsed"] = timeElapsed;
+                newRow["IsCompleted"] = false;
+                newRow["FilePath"] = filePath;
+                _progressTable.Rows.Add(newRow);
+            }
+        }
+
+        private string CalculateResult(IEnumerable<SkillMatrix> skillMatrixEntries)
+        {
+            // Ensure skill matrix entries are not null or empty
+            if (skillMatrixEntries == null || !skillMatrixEntries.Any())
+            {
+                return StatusTypes.NeedsImprovement;
+            }
+
+            // Count total tasks and correctly completed tasks
+            int totalTasks = skillMatrixEntries.Count();
+            int correctTasks = skillMatrixEntries.Count(e => e.Status == StatusTypes.Completed);
+
+            // Calculate performance ratio
+            double performanceRatio = (double)correctTasks / totalTasks;
+
+            // Determine the result based on performance ratio
+            return performanceRatio switch
+            {
+                >= 0.9 => StatusTypes.Mastered,
+                >= 0.7 => StatusTypes.Proficient,
+                >= 0.4 => StatusTypes.Developing,
+                _ => StatusTypes.NeedsImprovement
+            };
+        }
+
+
+
+        public async Task<string> UpdateSectionResultAsync(string activityId)
+        {
+            var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(activityId);
+            var sectionResult = CalculateSectionResult(skillMatrixEntries);
+
+            var activity = await _activityRepository.GetByIdAsync(activityId);
+            activity.Result = sectionResult;
+            activity.ModifyDate = DateTime.Now;
+
+            await _activityRepository.UpdateActivityAsync(activity);
+            return sectionResult;
+        }
+
+        private string CalculateSectionResult(IEnumerable<SkillMatrix> skillMatrixEntries)
+        {
+            if (skillMatrixEntries == null || !skillMatrixEntries.Any())
+                return StatusTypes.NeedsImprovement;
+
+            // Aggregate task performance metrics
+            var taskMetrics = skillMatrixEntries.Select(e => new
+            {
+                IsCorrect = e.AttemptstoSolve > 0, // Correct if AttemptstoSolve > 0
+                AttemptstoSolve = e.AttemptstoSolve,
+                HintsChecked = e.HintsChecked,
+                TotalTime = e.TotalTime
+            }).ToList();
+
+            // Calculate weighted score for the section
+            var sectionScore = taskMetrics.Average(task =>
+                (task.IsCorrect ? 1 : 0) * 0.5 + // Correctness contributes 50%
+                (1 / (1 + (float)task.AttemptstoSolve)) * 0.2 + // Fewer attempts contribute positively
+                (1 - (float)task.HintsChecked / 5) * 0.2 + // Fewer hints contribute positively
+                (1 - (float)task.TotalTime / 600) * 0.1 // Less time contributes positively
+            ) * 100;
+
+            // Map the score to a performance level
+            return sectionScore switch
+            {
+                >= 90 => StatusTypes.Mastered,
+                >= 75 => StatusTypes.Proficient,
+                >= 50 => StatusTypes.Developing,
+                _ => StatusTypes.NeedsImprovement
+            };
+        }
+        // SIMULATION-LEVEL OPERATIONS
+
+        public async Task<string> CalculateSimulationResultAsync(string simulationId)
+        {
+            // Fetch all activities (sections) for the simulation
+            var allActivities = await _activityRepository.GetActivitiesForSimulationAsync(simulationId, UserId);
+
+            // Calculate section results
+            var sectionResults = allActivities.Select(a => a.Result).ToList();
+
+            if (!sectionResults.Any())
+                return StatusTypes.NeedsImprovement;
+
+            // Aggregate section results into a simulation result
+            var simulationScore = sectionResults.Average(result => result switch
+            {
+                StatusTypes.Mastered => 100,
+                StatusTypes.Proficient => 75,
+                StatusTypes.Developing => 50,
+                _ => 25 // Needs Improvement
+            });
+
+            // Map the score to a performance level
+            return simulationScore switch
+            {
+                >= 90 => StatusTypes.Mastered,
+                >= 75 => StatusTypes.Proficient,
+                >= 50 => StatusTypes.Developing,
+                _ => StatusTypes.NeedsImprovement
+            };
+        }
+
+
+        public async Task IncrementTimeElapsedAsync()
+        {
+            if (CurrentTaskIndex < 0 || CurrentTaskIndex >= Tasks.Count) return;
+
+            if (_taskElapsedTimes.ContainsKey(CurrentTaskIndex))
+                _taskElapsedTimes[CurrentTaskIndex]++;
+            else
+                _taskElapsedTimes[CurrentTaskIndex] = 1;
+
+            // Update the SkillMatrix with the new TotalTime
+            var currentTask = Tasks[CurrentTaskIndex];
+            var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, currentTask.TaskId);
+
+            if (existingEntry != null)
+            {
+                existingEntry.TotalTime = _taskElapsedTimes[CurrentTaskIndex];
+                existingEntry.ModifyBy = UserId;
+                existingEntry.ModifyDate = DateTime.UtcNow;
+
+                await _skillMatrixRepository.UpsertSkillMatrixAsync(existingEntry, UserId);
+            }
+            else
+            {
+                // If the task is not in SkillMatrix, add it with the current TotalTime
+                await _skillMatrixRepository.UpsertSkillMatrixAsync(new SkillMatrix
+                {
+                    ActivityId = ActivityId,
+                    TaskId = currentTask.TaskId,
+                    TotalTime = _taskElapsedTimes[CurrentTaskIndex],
+                    Status = StatusTypes.Visited,
+                    CreateBy = UserId,
+                    CreateDate = DateTime.UtcNow,
+                    ModifyBy = UserId,
+                    ModifyDate = DateTime.UtcNow,
+                    TaskAttempt = 1
+                }, UserId);
+            }
+        }
+
+
+        public async Task<List<Activity>> GetAllActivitiesForSimulationAsync()
+        {
+            var activities = await _activityRepository.GetActivitiesForSimulationAsync(SimulationId, UserId);
+            return activities.ToList(); // Convert IEnumerable<Activity> to List<Activity>
+        }
+
     }
 }
 
 
+//public async Task UpdateSkillMatrixStatusAndAttempt(int taskIndex)
+//{
+//    var currentTask = Tasks[taskIndex];
+//    var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, currentTask.TaskId);
+//    int taskAttempt = (existingEntry?.TaskAttempt ?? 0) + 1;
+
+//    var skillMatrix = new SkillMatrix
+//    {
+//        ActivityId = ActivityId,
+//        TaskId = currentTask.TaskId,
+//        Status = StatusTypes.Completed, // Mark status as completed regardless of correctness
+//        TaskAttempt = taskAttempt,  // Increment TaskAttempt
+//        ModifyBy = UserId,
+//        ModifyDate = DateTime.UtcNow,
+//        HintsChecked = existingEntry?.HintsChecked ?? 0,
+//        TotalTime = _taskElapsedTimes[taskIndex]
+//    };
+//    await _skillMatrixRepository.UpsertSkillMatrixAsync(skillMatrix, UserId);
+//}
+
+//public async Task CompleteAllTasks()
+//{
+//    foreach (var task in Tasks)
+//    {
+//        var existingEntry = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, task.TaskId);
+
+//        var skillMatrix = new SkillMatrix
+//        {
+//            ActivityId = ActivityId,
+//            TaskId = task.TaskId,
+//            Status = StatusTypes.Completed,
+//            AttemptstoSolve = existingEntry?.AttemptstoSolve ?? 1,
+//            TaskAttempt = existingEntry?.TaskAttempt ?? 1,
+//            TotalTime = _taskElapsedTimes[Tasks.IndexOf(task)],
+//            ModifyDate = DateTime.Now
+//        };
+
+//        await _skillMatrixRepository.UpsertSkillMatrixAsync(skillMatrix, UserId);
+//    }
+
+//    await UpdateActivityStatusAsync();
+//}
+//public async Task SaveCurrentStateAsync()
+//{
+//    await SaveProgressAsync();
+//}
+//public async Task SaveTaskProgressAsync(bool isTaskCompleted)
+//{
+//    var currentTask = Tasks[CurrentTaskIndex];
+//    var existingSkillMatrix = await _skillMatrixRepository.GetSkillMatrixByTaskId(ActivityId, currentTask.TaskId);
+
+//    var skillMatrix = new SkillMatrix
+//    {
+//        ActivityId = ActivityId,
+//        TaskId = currentTask.TaskId,
+//        HintsChecked = existingSkillMatrix?.HintsChecked ?? 0,
+//        TotalTime = _taskElapsedTimes[CurrentTaskIndex],
+//        AttemptstoSolve = isTaskCompleted ? 1 : existingSkillMatrix?.AttemptstoSolve + 1 ?? 1,
+//        Status = isTaskCompleted ? StatusTypes.Completed : StatusTypes.InComplete,
+//        CreateBy = UserId,
+//        CreateDate = DateTime.Now,
+//        ModifyBy = UserId,
+//        ModifyDate = DateTime.Now,
+//        TaskAttempt = existingSkillMatrix?.TaskAttempt + 1 ?? 1
+//    };
+
+//    await _skillMatrixRepository.UpsertSkillMatrixAsync(skillMatrix, UserId);
+//    MessageBox.Show("Progress saved successfully.");
+//}
+
+//private string CalculateResultStatus(List<JobTask> tasks, Dictionary<string, string> taskStatuses)
+//{
+//    int completedCount = tasks.Count(t => taskStatuses.ContainsKey(t.TaskId) && taskStatuses[t.TaskId] == StatusTypes.Completed);
+//    double ratio = (double)completedCount / tasks.Count;
+//    return ratio switch
+//    {
+//        >= 0.9 => "Mastered",
+//        >= 0.7 => "Proficient",
+//        >= 0.4 => "Developing",
+//        _ => "Needs Improvement"
+//    };
+//}
+
+//private string DetermineSectionStatus(List<JobTask> tasks, Dictionary<string, SkillMatrix> taskStatuses)
+//{
+//    int completedCount = tasks.Count(t => taskStatuses.ContainsKey(t.TaskId) && taskStatuses[t.TaskId].Status == StatusTypes.Completed);
+//    double ratio = (double)completedCount / tasks.Count;
+//    return ratio switch
+//    {
+//        1 => StatusTypes.Completed,
+//        >= 0.7 => StatusTypes.PartiallyCompleted,
+//        > 0 => StatusTypes.InProgress,
+//        _ => StatusTypes.NotStarted
+//    };
+//}
 
 
 

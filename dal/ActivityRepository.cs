@@ -642,6 +642,27 @@ namespace JobSimulation.DAL
             return count;
         }
 
+        public async Task<IEnumerable<Activity>> GetActivitiesForSimulationAsync(string simulationId, string userId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var query = @"
+        SELECT *
+        FROM Activity
+        WHERE SimulationId = @SimulationId AND UserId = @UserId
+        ORDER BY CreateDate ASC";
 
+            return await connection.QueryAsync<Activity>(query, new { SimulationId = simulationId, UserId = userId });
+        }
+        public async Task<IEnumerable<(string SectionId, string Result)>> GetSectionResultsAsync(string simulationId, string userId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var query = @"
+        SELECT SectionId, Result
+        FROM Activity
+        WHERE SimulationId = @SimulationId AND UserId = @UserId
+        ORDER BY CreateDate ASC";
+
+            return await connection.QueryAsync<(string SectionId, string Result)>(query, new { SimulationId = simulationId, UserId = userId });
+        }
     }
 }

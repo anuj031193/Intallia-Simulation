@@ -140,6 +140,16 @@ namespace JobSimulation.DAL
 
             return null;
         }
+       
+        public async Task<List<JobTask>> GetTasksForSectionAsync(string sectionId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            var tasks = await connection.QueryAsync<JobTask>(
+                "SELECT * FROM Task WHERE SectionId = @SectionId ORDER BY [Order]",
+                new { SectionId = sectionId }
+            );
+            return tasks.ToList();
+        }
 
         public async Task<List<JobTask>> GetTasksBySectionIdAsync(string sectionId, string activityId)
         {
@@ -386,35 +396,35 @@ namespace JobSimulation.DAL
                     var modifyDate = DateTime.UtcNow;
 
                     // Check existence with proper locking
-                    var exists = await connection.ExecuteScalarAsync<bool>(
-                        @"SELECT 1 FROM SkillMatrix WITH (UPDLOCK, ROWLOCK) 
-                        WHERE ActivityId = @ActivityId AND TaskId = @TaskId",
+                    var existing = await connection.QueryFirstOrDefaultAsync<SkillMatrix>(
+                        @"SELECT * FROM SkillMatrix WITH (UPDLOCK, ROWLOCK) 
+                  WHERE ActivityId = @ActivityId AND TaskId = @TaskId",
                         new { ActivityId = activityId, TaskId = taskId },
                         transaction
                     );
 
-                    if (exists)
+                    if (existing != null)
                     {
-                        // Update only metadata, preserve existing status
+                        // Update only metadata, preserve existing status and TotalTime
                         await connection.ExecuteAsync(
                             @"UPDATE SkillMatrix SET 
-                                ModifyBy = @UserId, 
-                                ModifyDate = @ModifyDate
-                            WHERE ActivityId = @ActivityId AND TaskId = @TaskId",
+                        ModifyBy = @UserId, 
+                        ModifyDate = @ModifyDate 
+                      WHERE ActivityId = @ActivityId AND TaskId = @TaskId",
                             new { ActivityId = activityId, TaskId = taskId, UserId = userId, ModifyDate = modifyDate },
                             transaction
                         );
                     }
                     else
                     {
-                        // Insert with Visited status
+                        // Insert with Visited status and initialize TotalTime
                         await connection.ExecuteAsync(
                             @"INSERT INTO SkillMatrix 
-                            (ActivityId, TaskId, HintsChecked, TotalTime, AttemptstoSolve, 
-                             Status, CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt)
-                            VALUES 
-                            (@ActivityId, @TaskId, 0, 0, 0, @Status, 
-                             @UserId, @ModifyDate, @UserId, @ModifyDate, 1)",
+                      (ActivityId, TaskId, HintsChecked, TotalTime, AttemptstoSolve, 
+                       Status, CreateBy, CreateDate, ModifyBy, ModifyDate, TaskAttempt)
+                      VALUES 
+                      (@ActivityId, @TaskId, 0, 0, 0, @Status, 
+                       @UserId, @ModifyDate, @UserId, @ModifyDate, 1)",
                             new
                             {
                                 ActivityId = activityId,
@@ -427,7 +437,7 @@ namespace JobSimulation.DAL
                         );
                     }
 
-                    // Update Activity table (removed 'taskIndex')
+                    // Update Activity table (if necessary)
                     await connection.ExecuteAsync(
                         "UPDATE Activity SET SectionId = @SectionId WHERE ActivityId = @ActivityId",
                         new { SectionId = sectionId, ActivityId = activityId },

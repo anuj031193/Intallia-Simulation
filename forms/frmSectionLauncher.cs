@@ -311,9 +311,9 @@ namespace JobSimulation.Forms
             try
             {
                 // Prevent navigation if current section is null (except for first-time "Next")
-                if (_currentSection == null && action != SectionNavigationAction.Next)
+                if (action == SectionNavigationAction.Complete)
                 {
-                    MessageBox.Show("Current section not initialized");
+                    LogoutAndClose();
                     return;
                 }
 
@@ -391,7 +391,6 @@ namespace JobSimulation.Forms
                     activityId,
                     0
                 );
-
                 var result = await simulationManager.LoadTaskDetailsForSectionAsync(navResult.Section.SectionId, activityId);
                 var tasks = result.tasks;
                 var taskIndex = result.currentTaskIndex;
@@ -451,7 +450,8 @@ namespace JobSimulation.Forms
             _simulationForm.Show();
         }
 
-        // Example of btnBack_Click event handler
+      
+
         private void btnBack_Click(object sender, EventArgs e)
         {
             this.Close();
@@ -526,10 +526,23 @@ namespace JobSimulation.Forms
         private void LogoutAndClose()
         {
             MessageBox.Show("Simulation completed. Logging out...");
+
+            // Close frmSimulationSoftware if it is open
+            var simulationSoftwareForm = Application.OpenForms.OfType<frmSimulationSoftware>().FirstOrDefault();
+            if (simulationSoftwareForm != null)
+            {
+                simulationSoftwareForm.Close();
+            }
+
+            // Subscribe to FormClosed event to show login form after both forms are closed
+            this.FormClosed += (s, e) =>
+            {
+                var loginForm = new frmUserLogin(_userRepository);
+                loginForm.Show();
+            };
+
+            // Close this form
             this.Close();
-            // Show login form
-            var loginForm = new frmUserLogin(_userRepository);
-            loginForm.Show();
         }
     }
 }

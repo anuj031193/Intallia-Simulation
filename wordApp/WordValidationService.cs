@@ -1,21 +1,16 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Concurrent;
+﻿
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Windows.Forms;
-using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Spreadsheet;
+using DocumentFormat.OpenXml.Wordprocessing;
 using JobSimulation.BLL;
 using JobSimulation.DAL;
 using JobSimulation.Models;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Newtonsoft.Json.Serialization;
-using static JobSimulation.excelApp.ExcelValidationService;
 
 namespace JobSimulation.wordApp
 {
@@ -41,55 +36,58 @@ namespace JobSimulation.wordApp
             {
                 if (!File.Exists(taskSubmission.FilePath))
                 {
-                    MessageBox.Show("Source file doesn't exist");
+                    MessageBox.Show("Source file doesn't exist.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return false;
                 }
 
-                WordprocessingDocument wordDocument = null;
-                FileStream stream = null;
-
-                try
+                using (var stream = new FileStream(taskSubmission.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var wordDoc = WordprocessingDocument.Open(stream, false))
                 {
-                    RetryPolicy(() =>
+                    // Extract content for the specific TaskId
+                    var taskDetails = taskSubmission.Task.Details as WordTaskDetails;
+                    if (taskDetails == null || string.IsNullOrEmpty(taskDetails.TaskLocation))
                     {
-                        stream?.Dispose();
-                        stream = new FileStream(taskSubmission.FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                        wordDocument = WordprocessingDocument.Open(stream, false);
-                    });
+                        MessageBox.Show("Task details do not contain a valid TaskLocation.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return false;
+                    }
 
-                    var details = taskSubmission.Task.Details as dynamic;
-
-                    dynamic studentResult = ProcessTask(
-                        wordDocument,
-                        taskSubmission,
-                        details.TaskLocation,
-                        taskSubmission.Task.TaskId
-                    );
-
-                    var masterData = JsonConvert.DeserializeObject<MasterJsonModel>(masterJson);
-
-                    var comparison = new
+                    var contentControl = ExtractContentControlForTask(wordDoc, taskSubmission.Task.TaskId, taskDetails.TaskLocation);
+                    if (contentControl == null)
                     {
-                        Student = GetTaskSpecificData(studentResult, taskSubmission),
-                        Master = GetTaskSpecificData(masterData, taskSubmission)
+                        MessageBox.Show($"No content found for TaskId: {taskSubmission.Task.TaskId} at TaskLocation: {taskDetails.TaskLocation}", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return false;
+                    }
+
+                    // Prepare the student's JSON for comparison
+                    var studentJson = new JObject
+                    {
+                        [taskSubmission.Task.TaskId] = new JObject
+                        {
+                            ["Value"] = contentControl.Content
+                        }
                     };
 
-                    var settings = new JsonSerializerSettings
+                    // Parse the master JSON and extract the specific task data
+                    JToken masterJsonToken;
+                    try
                     {
-                        Formatting = Formatting.None,
-                        NullValueHandling = NullValueHandling.Ignore,
-                        ContractResolver = new OrderedContractResolver()
-                    };
+                        masterJsonToken = JToken.Parse(masterJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Master JSON is not valid: {ex.Message}", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return false;
+                    }
 
-                    string studentJson = JsonConvert.SerializeObject(comparison.Student, settings);
-                    string masterJsonForComparison = JsonConvert.SerializeObject(comparison.Master, settings);
+                    var masterTaskJson = masterJsonToken[taskSubmission.Task.TaskId];
+                    if (masterTaskJson == null)
+                    {
+                        MessageBox.Show($"Master JSON does not contain data for TaskId: {taskSubmission.Task.TaskId}", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return false;
+                    }
 
-                    return _validationService.CompareJsonStrings(studentJson, masterJsonForComparison);
-                }
-                finally
-                {
-                    wordDocument?.Dispose();
-                    stream?.Dispose();
+                    // Compare the student JSON and master JSON for the specific TaskId
+                    return JToken.DeepEquals(studentJson[taskSubmission.Task.TaskId], masterTaskJson);
                 }
             }
             catch (Exception ex)
@@ -98,22 +96,42 @@ namespace JobSimulation.wordApp
                 return false;
             }
         }
-
-        private Dictionary<string, object> ProcessTask(
-            WordprocessingDocument wordDocument,
-            TaskSubmission taskSubmission,
-            string taskLocation,
-            string taskId)
+        private ContentControlDetail ExtractContentControlForTask(WordprocessingDocument wordDoc, string taskId, string taskLocation)
         {
-            var result = new Dictionary<string, object>();
-            var tasks = new List<JobTask> { taskSubmission.Task };
+            // Descendants of SdtElement to traverse structured content controls
+            var sdtElements = wordDoc.MainDocumentPart.Document.Body.Descendants<SdtElement>();
 
-            // Add logic to process the Word task based on taskLocation and taskId
-            // For example, extracting specific paragraphs, tables, etc.
+            foreach (var sdt in sdtElements)
+            {
+                // Get the <w:tag> value
+                var tag = sdt.SdtProperties.GetFirstChild<Tag>()?.Val?.Value;
 
-            return result;
+                // Log for debugging
+                Console.WriteLine($"Found Tag: {tag}, TaskLocation: {taskLocation}");
+
+                // Match TaskId with <w:tag> and TaskLocation
+                if (!string.IsNullOrEmpty(tag) &&
+                    (tag.Equals(taskId, StringComparison.OrdinalIgnoreCase) || tag.Equals("Task" + taskId, StringComparison.OrdinalIgnoreCase) || tag.Equals(taskLocation, StringComparison.OrdinalIgnoreCase)))
+                {
+                    // Retrieve the content
+                    string content = sdt.InnerText.Trim();
+
+                    // Log the content for debugging
+                    Console.WriteLine($"Match found for TaskId: {taskId}, TaskLocation: {taskLocation}, Content: {content}");
+
+                    // Return the matched content
+                    return new ContentControlDetail
+                    {
+                        Tag = tag,
+                        Content = content
+                    };
+                }
+            }
+
+            // Log if no match is found
+            Console.WriteLine($"No match found for TaskId: {taskId} or TaskLocation: {taskLocation}");
+            return null; // Return null if no matching content is found
         }
-
         private void RetryPolicy(Action action, int maxRetries = 3, int delay = 1000)
         {
             for (int i = 0; i < maxRetries; i++)
@@ -125,52 +143,19 @@ namespace JobSimulation.wordApp
                 }
                 catch (IOException) when (i < maxRetries - 1)
                 {
-                    Thread.Sleep(delay);
+                    Thread.Sleep(delay); // Wait before retrying
                 }
                 catch (UnauthorizedAccessException) when (i < maxRetries - 1)
                 {
-                    Thread.Sleep(delay);
+                    Thread.Sleep(delay); // Wait before retrying
                 }
             }
         }
+    }
 
-        private object GetTaskSpecificData(object source, TaskSubmission task)
-        {
-            var details = task.Task.Details as dynamic;
-            var taskTypeKey = "TaskLocation"; // Adjust based on Word task details
-            var taskId = task.Task.TaskId;
-
-            if (source is IDictionary<string, object> sourceDict)
-            {
-                if (!sourceDict.ContainsKey(taskTypeKey)) return null;
-
-                var items = sourceDict[taskTypeKey] as IEnumerable;
-                return FindItemById(items, taskId);
-            }
-            else
-            {
-                var property = source.GetType().GetProperty(taskTypeKey);
-                if (property == null) return null;
-
-                var items = property.GetValue(source) as IEnumerable;
-                return FindItemById(items, taskId);
-            }
-        }
-
-        private object FindItemById(IEnumerable items, string taskId)
-        {
-            if (items == null) return null;
-
-            foreach (var item in items)
-            {
-                var idProperty = item.GetType().GetProperty("TaskId");
-                if (idProperty == null) continue;
-
-                var idValue = idProperty.GetValue(item) as string;
-                if (idValue == taskId) return item;
-            }
-            return null;
-        }
-
+    public class ContentControlDetail
+    {
+        public string Tag { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
     }
 }

@@ -28,7 +28,7 @@ namespace JobSimulation.Forms
         private int timeElapsed;
         private List<JobTask> tasks;
         private Section _currentSection;
-
+        private readonly UserRepository _userRepository;
         private readonly SectionRepository _sectionRepository;
         private readonly string _simulationId;
         private string _sectionId;
@@ -65,6 +65,7 @@ namespace JobSimulation.Forms
             this._userId = userId;
             this._sectionRepository = sectionRepository;
             this._currentSection = currentSection;
+            this._userRepository= userRepository;
 
             _simulationManager = new SimulationManager(
                 tasks,
@@ -280,6 +281,7 @@ namespace JobSimulation.Forms
 
         private void LoadMasterData()
         {
+            Debug.WriteLine($"[DEBUG] LoadMasterData called. Current Section: {_currentSection.SectionId}");
             _simulationManager.LoadMasterData();
         }
 
@@ -547,17 +549,81 @@ namespace JobSimulation.Forms
 
         private async void btnCompleteSimulation_Click(object sender, EventArgs e)
         {
-            if (!_allTasksCompleted)
+            try
             {
-                MessageBox.Show("Please complete all tasks before finishing the simulation.");
-                return;
-            }
+                // Check if all tasks are completed
+                bool allTasksCompleted = await _simulationManager.AreAllTasksCompleted();
 
-            await _simulationManager.SaveProgressAsync();
-            MessageBox.Show("Congratulations! You've completed the entire simulation.");
-            Application.Exit();
+                if (!allTasksCompleted)
+                {
+                    var result = MessageBox.Show(
+                        "Not all tasks are completed. Are you sure you want to submit?",
+                        "Confirm Submission",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+
+                    if (result != DialogResult.Yes)
+                        return;
+
+                    // Mark unvisited tasks as Incomplete
+                    await _simulationManager.MarkUnvisitedTasksAsInCompleted();
+                }
+
+                // Fetch all activities (sections) for the simulation
+                var allActivities = await _simulationManager.GetAllActivitiesForSimulationAsync();
+
+                // Calculate and save results for all sections
+                foreach (var activity in allActivities)
+                {
+                    var sectionResult = await _simulationManager.UpdateSectionResultAsync(activity.ActivityId); // Reuse UpdateSectionResultAsync
+                    activity.Result = sectionResult;
+                    activity.Status = StatusTypes.Completed;
+                    activity.ModifyBy = _userId;
+                    activity.ModifyDate = DateTime.Now;
+
+                    // Save the updated activity for the section
+                    await _simulationManager.SaveActivityAsync(activity);
+                }
+
+                // Calculate overall result across all sections
+                var simulationResult = await _simulationManager.CalculateSimulationResultAsync(_simulationId);
+                MessageBox.Show($"Simulation completed. Overall Result: {simulationResult}",
+                    "Simulation Completed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                // Ensure both forms close and navigate to login
+                CloseAllAndOpenLogin();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while completing the simulation: {ex.Message}",
+                    "Error",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
 
+        private void CloseAllAndOpenLogin()
+        {
+            // Close frmSectionLauncher if it is open
+            //var sectionLauncherForm = Application.OpenForms.OfType<frmSectionLauncher>().FirstOrDefault();
+            //if (sectionLauncherForm != null)
+            //{
+            //    sectionLauncherForm.Close();
+            //}
+
+            // Subscribe to FormClosed event to ensure navigation happens after forms are closed
+            this.FormClosed += (s, e) =>
+            {
+                // Show the login form after closing all forms
+                var loginForm = new frmUserLogin(_userRepository);
+                loginForm.Show();
+            };
+
+            // Close this form
+            this.Close();
+        }
         public async Task UpdateSectionDataAsync(
        List<JobTask> newTasks,
        string newFilePath,
