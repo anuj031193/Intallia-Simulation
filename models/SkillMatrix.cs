@@ -13,7 +13,7 @@ namespace JobSimulation.Models
         public int HintsChecked { get; set; }
         public int TotalTime { get; set; }
 
-        public bool IsCorrect { get; set; }
+   
         public int AttemptstoSolve { get; set; }
         public string Status { get; set; }
         public string CreateBy { get; set; }

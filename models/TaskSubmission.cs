@@ -18,6 +18,8 @@ namespace JobSimulation.Models
         public string Result { get; set; } // Result of the task
         public int TaskAttempt { get; set; } // Task attempt index
 
-     
+
     }
+
+
 }

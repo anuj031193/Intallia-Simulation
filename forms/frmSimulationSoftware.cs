@@ -1,4 +1,5 @@
 ﻿
+
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -13,6 +14,8 @@ using JobSimulation.Models;
 using JobSimulation.Managers;
 using Timer = System.Windows.Forms.Timer;
 using Activity = JobSimulation.Models.Activity;
+using WinFormsTimer = System.Windows.Forms.Timer;
+
 
 namespace JobSimulation.Forms
 {
@@ -24,7 +27,7 @@ namespace JobSimulation.Forms
         public event EventHandler SectionCompleted;
         private bool _allTasksCompleted = false;
         private bool _isLastSection = false;
-        private int currentTaskIndex;
+        //private int currentTaskIndex;
         private int timeElapsed;
         private List<JobTask> tasks;
         private Section _currentSection;
@@ -34,6 +37,22 @@ namespace JobSimulation.Forms
         private string _sectionId;
         private readonly string _userId;
         private string _masterJson;
+        private readonly SkillMatrixRepository _skillMatrixRepository;
+
+
+
+
+        //--- State and Animation Variables for Collapse/Expand ---
+        private bool isFormCollapsed = true;
+        private WinFormsTimer moveTimer; // Timer for the sliding animation
+        private int targetX;             // Target X coordinate for animation
+        private int formWidthExpanded = 400; // Expanded width (ADJUST AS NEEDED based on your content)
+        private int formWidthCollapsed = 35; // Width to show when collapsed (adjust to fit arrow comfortably)
+        private int toggleButtonHeight = 80; // Height of the clickable toggle area (adjust as needed)
+        private Rectangle toggleButtonArea;  // Defined relative to form's client area (0, Y)
+        private int formCornerRadius = 20; // Radius for the form corners
+
+        private bool _exiting = false; // Add this class-level flag
 
         public frmSimulationSoftware(
             List<JobTask> tasks,
@@ -57,7 +76,7 @@ namespace JobSimulation.Forms
             bool isLastSection,
             int currentTaskIndex)
         {
-            this.currentTaskIndex = currentTaskIndex;
+            //this.currentTaskIndex = currentTaskIndex;
             this._isLastSection = isLastSection;
             this.tasks = tasks;
             this._sectionId = sectionId;
@@ -65,8 +84,8 @@ namespace JobSimulation.Forms
             this._userId = userId;
             this._sectionRepository = sectionRepository;
             this._currentSection = currentSection;
-            this._userRepository= userRepository;
-
+            this._userRepository = userRepository;
+            this._skillMatrixRepository = skillMatrixRepository;
             _simulationManager = new SimulationManager(
                 tasks,
                 filePath,
@@ -77,6 +96,7 @@ namespace JobSimulation.Forms
                 activityRepository,
                 taskRepository,
                 taskService,
+                sectionRepository,
                 progressDataSet,
                 attempt,
                 currentSection,
@@ -85,18 +105,50 @@ namespace JobSimulation.Forms
             );
 
             InitializeComponent();
-            InitializeComponents();
+            // --- Form Styling for Collapse/Expand ---
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.StartPosition = FormStartPosition.Manual;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.ControlBox = false;
+            this.ShowInTaskbar = false; // Optional: Hide from taskbar
+            this.TopMost = true;       // Keep on top
+            this.DoubleBuffered = true; // For smoother drawing
+
+            // --- Initialize Simulation Components & UI (Original) ---
+            InitializeComponents(); // Initializes activityTimer etc.
             InitializeDynamicUI();
-            LoadMasterData();
+            InitializeFormToCollapsedState();// Sets initial button visibility
+        /*    LoadMasterData();  */     // Loads simulation master data
+
+            // --- Initialize Collapse/Expand Animation ---
+            InitializeCollapseExpand();
+
+            // Wire up Load event AFTER InitializeComponent
+            this.Load += frmSimulationSoftware_Load;
+            //InitializeComponents();
+            //InitializeDynamicUI();
+            //LoadMasterData();
         }
+        private void InitializeFormToCollapsedState()
+        {
+            var screen = Screen.PrimaryScreen.WorkingArea;
+
+            isFormCollapsed = true;
+            this.Width = formWidthCollapsed;
+            this.Location = new Point(screen.Right - formWidthCollapsed, screen.Top);
+            UpdateFormRegionBasedOnState();
+            this.Invalidate(); // Optional: Forces a repaint
+        }
+
 
         private void InitializeDynamicUI()
         {
-            btnCompleteSimulation.Visible = false; // Initially hidden
-            btnSaveandNextSession.Visible = true;
+
             btnStart.Enabled = true;
             btnStart.Visible = true;
         }
+
         private void DisableAllButtonsExceptStartAndClose()
         {
             foreach (Control control in this.Controls)
@@ -112,12 +164,628 @@ namespace JobSimulation.Forms
             btnStart.Enabled = true;
             btnClose.Enabled = true;
         }
-        private async Task RetryCurrentSection()
+
+
+        private async void frmSimulationSoftware_Load(object sender, EventArgs e)
         {
-            await _simulationManager.SaveProgressAsync();
-            NavigateToSection?.Invoke(this, SectionNavigationAction.Retry);
+            DisableAllButtonsExceptStartAndClose(); // Ensure only btnStart and btnClose are enabled
+            
+            _isLastSection = await _sectionRepository.IsLastSectionAsync(_sectionId, _simulationId);
+            await UpdateProgressBarAsync();
+            Debug.WriteLine($"[DEBUG] frmSimulationSoftware_Load - _isLastSection: {_isLastSection}");
+
+            if (_isLastSection)
+            {
+
+            }
+
+            await UpdateSectionNavigationButtons(_sectionId, enableNavigation: false); // Skip enabling navigation buttons on load
         }
 
+        private async Task UpdateSectionNavigationButtons(string sectionId, bool enableNavigation = true)
+        {
+            btnPrevious.Enabled = false;
+            btnNext.Enabled = false;
+
+            if (enableNavigation)
+            {
+                bool isFirstTask = _simulationManager.IsFirstTaskInSection();
+                bool isLastTask = _simulationManager.IsLastTaskInSection();
+
+                btnPrevious.Enabled = !isFirstTask;
+                btnNext.Enabled = !isLastTask || !_isLastSection;
+            }
+        }
+
+        //public void SetCurrentTaskIndex(int taskIndex)
+        //{
+        //    if (taskIndex >= 0 && taskIndex < tasks.Count)
+        //    {
+        //        currentTaskIndex = taskIndex;
+        //    }
+        //}
+
+        public void SetElapsedTime(int elapsedTime)
+        {
+            timeElapsed = elapsedTime;
+            lblTimer.Text = $"Time: {FormatTime(timeElapsed)}";
+        }
+        private string FormatTime(int totalSeconds)
+        {
+            TimeSpan ts = TimeSpan.FromSeconds(totalSeconds);
+            return ts.ToString(@"hh\:mm\:ss");
+        }
+
+        private void InitializeComponents()
+        {
+            activityTimer = new Timer { Interval = 1000 };
+            activityTimer.Tick += Timer_Tick;
+
+            InitializeUI();
+            DisableControls();
+        }
+
+        private void InitializeUI()
+        {
+            // Ensure the initial UI state when the form is loaded
+            lblTimer.Visible = false;
+            btnPrevious.Enabled = false;
+            btnNext.Enabled = false;
+
+            DisableControls(); // Call DisableControls to set the initial state
+        }
+
+        private void DisableControls()
+        {
+            // Disable all buttons except btnStart and btnClose
+            btnCheckAnswer.Enabled = false;
+            btnPrevious.Enabled = false;
+            btnNext.Enabled = false;
+            btnHint.Enabled = false;
+            btnSubmit.Enabled = false;
+
+
+            btnStart.Enabled = true; // Ensure btnStart is enabled
+            btnClose.Enabled = true; // Allow closing the application
+        }
+
+        private async void EnableControls()
+        {
+            // Enable basic buttons
+            btnCheckAnswer.Enabled = true;
+            btnPrevious.Enabled = true;
+            btnNext.Enabled = true;
+            btnHint.Enabled = true;
+            btnSubmit.Enabled = true;
+
+
+        
+            btnSaveandExit.Enabled = true;
+
+            btnStart.Enabled = false; // Disable btnStart after it's clicked
+        }
+
+        private void StartTimers()
+        {
+            activityTimer.Start();
+        }
+
+        //private void LoadMasterData()
+        //{
+        //    Debug.WriteLine($"[DEBUG] LoadMasterData called. Current Section: {_currentSection.SectionId}");
+        //    _simulationManager.LoadMasterData();
+        //}
+
+        private async Task LoadTask(int taskIndex)
+        {
+            var task = await _simulationManager.LoadTaskAsync(taskIndex);
+            if (task == null)
+            {
+                MessageBox.Show("Invalid task index.");
+                return;
+            }
+
+            dynamic details = task.Details;
+            label1.Text = details?.TaskDescription ?? task.Description;
+            label1.Visible = true;
+            label2.Text = $"Task {taskIndex + 1} of {_simulationManager.Tasks.Count}";
+
+            lblTimer.Visible = true;
+            lblTimer.Text = $"Time: {FormatTime(_simulationManager.CurrentTaskElapsedTime)}"; await UpdateProgressBarAsync();
+        }
+        //private async void btnSubmit_Click(object sender, EventArgs e)
+        //{
+        //    activityTimer.Stop();
+        //    try
+        //    {
+        //        await _simulationManager.CacheTaskAnswerAsync();
+
+        //        if (_simulationManager.IsLastTaskInLastSection())
+        //        {
+        //            // Save entire simulation to DB
+        //            await _simulationManager.SaveSimulationProgressAsync();
+        //            MessageBox.Show("Simulation Complete! Thank you.");
+        //            await CloseFileAndExitAsync();
+        //        }
+        //        else
+        //        {
+        //            // Just cache locally (DB save happens on section change)
+        //            MessageBox.Show("Task submitted (locally). Progress will be saved to database on section change.");
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        MessageBox.Show($"Error submitting: {ex.Message}");
+        //    }
+        //    finally
+        //    {
+        //        activityTimer.Start();
+        //    }
+        //}
+
+
+        private async void btnSubmit_Click(object sender, EventArgs e)
+        {
+            activityTimer.Stop();
+            bool shouldCloseForm = false; // Local flag to determine if we should close
+
+            try
+            {
+                await _simulationManager.CacheTaskAnswerAsync();
+                await UpdateProgressBarAsync();
+
+                if (_simulationManager.IsLastTaskInSection())
+                {
+                    await _simulationManager.SaveSectionProgressAsync();
+
+                    if (await _simulationManager.IsLastTaskInLastSectionAsync())
+                    {
+                        await _simulationManager.SaveSimulationProgressAsync();
+                        await _simulationManager.UpdateAllSectionResultsAsync();
+                       
+                        string overallResult = await _simulationManager.CalculateSimulationResultAsync(_simulationManager.SimulationId);
+                       
+                        MessageBox.Show(
+                            $"Simulation Complete! Thank you.\n\nOverall Result: {overallResult}",
+                            "Simulation Complete",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information
+                        );
+
+                        // Set flags to trigger form closure
+                        _exiting = true;
+                        shouldCloseForm = true;
+                        await CloseFileAndExitAsync();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Section complete! Progress saved to database.");
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Task submitted (locally). Progress will be saved to database on section change.");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error submitting: {ex.Message}");
+            }
+            finally
+            {
+                // Close form if needed
+                if (shouldCloseForm)
+                {
+                    this.Close();
+                }
+                // Restart timer only if not exiting
+                else if (!_exiting)
+                {
+                    activityTimer.Start();
+                }
+            }
+        }
+        private async void btnCheckAnswer_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // Only update cache, not DB
+                var resultMessage = await _simulationManager.CheckAnswerAsync(_simulationManager.CurrentTaskIndex);
+                MessageBox.Show(resultMessage, "Result", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                await UpdateProgressBarAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error validating task: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private void InitializeCollapseExpand()
+        {
+            moveTimer = new WinFormsTimer();
+            moveTimer.Interval = 15; // Animation speed (milliseconds)
+            moveTimer.Tick += MoveTimer_Tick;
+        }
+        private async void Timer_Tick(object sender, EventArgs e)
+        {
+            await _simulationManager.IncrementTimeElapsedAsync();
+            lblTimer.Text = $"Time: {FormatTime(_simulationManager.CurrentTaskElapsedTime)}";
+        }
+
+
+        private async void btnHint_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var hint = await _simulationManager.GetHintAsync(_simulationManager.CurrentTaskIndex);
+                MessageBox.Show(hint, "Hint");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error fetching hint: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+       
+
+
+
+        private async void btnStart_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_simulationManager.Tasks.Count == 0)
+                {
+                    MessageBox.Show("No tasks to load. Please check the section.");
+                    return;
+                }
+                await _simulationManager.SetActivityInProgressAsync();
+
+                await LoadTask(_simulationManager.CurrentTaskIndex);
+            
+                SetElapsedTime(_simulationManager.CurrentTaskElapsedTime);
+                //label2.Text = $"Task {currentTaskIndex + 1} of {_simulationManager.Tasks.Count}";
+              
+                MessageBox.Show("Process started!");
+
+                StartTimers();
+
+                EnableControls(); // Enable all relevant buttons
+                await UpdateNavigationButtonsAsync();
+                if (_isLastSection)
+                {
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred: {ex.Message}");
+            }
+        }
+        private async Task LoadCurrentTask()
+        {
+            await LoadTask(_simulationManager.CurrentTaskIndex);
+        }
+
+        private async Task<bool> CanNavigateToNextSection()
+        {
+            try
+            {
+                // Check if all tasks are completed in the current section
+                bool allCompleted = await _simulationManager.AreAllTasksCompleted();
+
+                if (!allCompleted)
+                {
+                    var result = MessageBox.Show(
+                        "Not all tasks are completed. Do you still want to move to the next section?",
+                        "Incomplete Tasks",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning
+                    );
+
+                    return result == DialogResult.Yes;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Validation error: {ex.Message}");
+                return false;
+            }
+        }
+        private async void btnNext_Click(object sender, EventArgs e)
+        {
+            activityTimer.Stop();
+            bool navigatingSection = false;
+            try
+            {
+                _simulationManager.UpdateActualProgressFromCacheForCurrentTask();
+                //await _simulationManager.SaveProgressAsync();
+
+                if (_simulationManager.IsLastTaskInSection())
+                {  // Validate before section navigation
+                    if (!await CanNavigateToNextSection())
+                    {
+                        activityTimer.Start();
+                        return;
+                    }
+             
+                    //await _simulationManager.SaveSectionProgressAsync();
+
+                    bool isLastSection = await _simulationManager.IsLastSectionAsync();
+
+                    if (isLastSection)
+                    {
+                        await _simulationManager.SaveSimulationProgressAsync();
+                        MessageBox.Show("Simulation Complete! Thank you.");
+                        await CloseFileAndExitAsync();
+                        // Do NOT restart timer
+                        return;
+                    }
+                    else
+                    {
+                        // Set flag so timer is NOT restarted
+                        navigatingSection = true;
+                        NavigateToSection?.Invoke(this, SectionNavigationAction.Next);
+                        return; // exit so timer does not restart
+                    }
+                }
+                else
+                {
+                    _simulationManager.MoveToNextTask();
+                    await LoadCurrentTask();
+                    await UpdateProgressBarAsync();
+                }
+                await UpdateNavigationButtonsAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}");
+            }
+            finally
+            {
+                // Only restart timer if not navigating to section
+                if (!navigatingSection)
+                {
+                    activityTimer.Start();
+                }
+            }
+        }
+        private async Task UpdateNavigationButtonsAsync()
+        {
+            bool isFirstSection = await _simulationManager.IsFirstSectionAsync();
+            bool isLastSection = await _simulationManager.IsLastSectionAsync();
+            bool isFirstTask = _simulationManager.IsFirstTaskInSection();
+            bool isLastTask = _simulationManager.IsLastTaskInSection();
+
+            btnPrevious.Enabled = !(isFirstTask && isFirstSection);
+            btnNext.Enabled = !(isLastTask && isLastSection);  // disable Next if at last task of last section
+        }
+        private async void btnPrevious_Click(object sender, EventArgs e)
+        {
+            activityTimer.Stop();
+            bool navigatingSection = false;
+            try
+            {
+                _simulationManager.UpdateActualProgressFromCacheForCurrentTask();
+                //await _simulationManager.SaveProgressAsync();
+
+                if (_simulationManager.IsFirstTaskInSection())
+                {
+                    // Save section progress before navigating
+                    await _simulationManager.SaveSectionProgressAsync();
+
+                    // Move to previous section
+                    navigatingSection = true;
+                    NavigateToSection?.Invoke(this, SectionNavigationAction.Previous);
+                    return; // Exit so timer does not restart
+                }
+                else
+                {
+                    // Move to previous task in current section
+                    _simulationManager.MoveToPreviousTask();
+                    await LoadCurrentTask();
+                    await UpdateProgressBarAsync();
+                }
+
+                await UpdateNavigationButtonsAsync(); // ✅ Keep navigation buttons up to date
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}");
+            }
+            finally
+            {
+                // Only restart timer if not navigating to section
+                if (!navigatingSection)
+                {
+                    activityTimer.Start();
+                }
+            }
+        }
+
+
+
+        public async Task UpdateSectionDataAsync(
+         List<JobTask> newTasks,
+         string newFilePath,
+         string newSectionId,
+         string newSoftwareId,
+         string newActivityId,
+         bool isLastSection,
+         Section newCurrentSection,
+         int newAttempt,
+         int newTaskIndex)
+        {
+            // Only update in-memory SimulationManager state (no DB writes!)
+            await _simulationManager.UpdateSectionDataAsync(
+                newTasks,
+                newFilePath,
+                newSectionId,
+                newSoftwareId,
+                newActivityId,
+                newAttempt,
+                newCurrentSection,
+                newTaskIndex
+            );
+
+            // UI resets (no DB writes here!)
+            _isLastSection = isLastSection;
+            _currentSection = newCurrentSection;
+            _sectionId = newSectionId;
+
+            await UpdateSectionNavigationButtons(newSectionId);
+
+            await LoadCurrentTask();
+            await UpdateProgressBarAsync();
+            //label2.Text = $"Task {_simulationManager.CurrentTaskIndex + 1} of {_simulationManager.Tasks.Count}";
+            lblTimer.Text = "Time: 00:00:00";
+            label1.Text = string.Empty;
+            label1.Visible = false;
+            lblTimer.Visible = false;
+
+            btnStart.Enabled = true;
+            btnStart.Visible = true;
+
+            DisableAllButtonsExceptStartAndClose();
+        }
+        private async Task UpdateProgressBarAsync()
+        {
+            // Use the new method for current section
+            int currentCompleted = _simulationManager.GetCurrentSectionCompletedCount();
+            int totalTasks = _simulationManager.Tasks.Count;
+
+            // Calculate current section percentage
+            int sectionPercent = totalTasks == 0 ? 0 :
+                (int)Math.Round((currentCompleted / (double)totalTasks) * 100);
+
+            // Now get overall progress
+            int totalTasksAll = await _simulationManager.GetTotalTaskCountAllSectionsAsync();
+            int completedAll = await _simulationManager.GetCompletedTaskCountAllSectionsAsync();
+
+            int overallPercent = totalTasksAll == 0 ? 0 :
+                (int)Math.Round((completedAll / (double)totalTasksAll) * 100);
+
+            // Update UI - use overall or section progress as needed
+            if (progressBar1 != null)
+            {
+                progressBar1.Value = overallPercent;
+                progressBar1.Refresh();
+            }
+        }
+        
+        //private void UpdateProgressBar()
+        //{
+        //    // Get total and completed counts from your simulation manager
+        //    int totalTasks = _simulationManager.GetTotalTaskCount();
+        //    int completedTasks = _simulationManager.GetCompletedTaskCount();
+        //    int totalSections = _simulationManager.GetTotalSectionCount();
+        //    int completedSections = _simulationManager.GetCompletedSectionCount();
+
+        //    // Calculate total items and completed items for progress calculation
+        //    int total = totalTasks + totalSections;
+        //    int done = completedTasks + completedSections;
+
+        //    // Calculate percentage safely (avoid division by zero)
+        //    int percent = total == 0 ? 0 : (int)((done / (double)total) * 100);
+
+        //    if (progressBar1 != null)
+        //    {
+        //        progressBar1.Minimum = 0;
+        //        progressBar1.Maximum = 100;
+        //        // Ensure value is within bounds (in case)
+        //        progressBar1.Value = Math.Clamp(percent, progressBar1.Minimum, progressBar1.Maximum);
+        //    }
+        //}
+
+        private async void btnSaveAndExit_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // Set exiting flag
+                _exiting = true;
+
+                // Cache and save progress
+                await _simulationManager.CacheTaskAnswerAsync();
+                await _simulationManager.SaveSectionProgressAsync();
+
+                // Close file and form
+                await CloseFileAndExitAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error saving and exiting: {ex.Message}");
+                _exiting = false; // Reset flag on error
+            }
+            finally
+            {
+                // Close the form after cleanup is complete
+                this.Close();
+            }
+        }
+        private void CloseAllAndOpenLogin()
+        {
+            // Close frmSectionLauncher if it is open
+            //var sectionLauncherForm = Application.OpenForms.OfType<frmSectionLauncher>().FirstOrDefault();
+            //if (sectionLauncherForm != null)
+            //{
+            //    sectionLauncherForm.Close();
+            //}
+
+            // Subscribe to FormClosed event to ensure navigation happens after forms are closed
+            this.FormClosed += (s, e) =>
+            {
+                // Show the login form after closing all forms
+                var loginForm = new frmUserLogin(_userRepository);
+                loginForm.Show();
+            };
+
+            // Close this form
+            this.Close();
+        }
+        private async Task<bool> CheckForceMoveToNextSection()
+        {
+            var result = MessageBox.Show(
+                "You haven't completed all tasks. Move to next section anyway?",
+                "Confirm Navigation",
+                MessageBoxButtons.YesNo);
+
+            return result == DialogResult.Yes;
+        }
+
+
+
+        private async Task CloseFileAndExitAsync()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_simulationManager?.FilePath))
+                {
+                    var fileService = new FileService();
+
+                    // Close the file using software-specific method
+                    fileService.CloseFile(_simulationManager.FilePath);
+
+                    // Wait for file to close
+                    await Task.Delay(500);
+
+                    // Delete the file
+                    if (File.Exists(_simulationManager.FilePath))
+                    {
+                        fileService.DeleteFile(_simulationManager.FilePath);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"File cleanup error: {ex.Message}");
+                // Consider logging instead of showing UI in cleanup
+            }
+        }
+        private async Task RetryCurrentSection()
+        {
+            //await _simulationManager.SaveProgressAsync();
+            NavigateToSection?.Invoke(this, SectionNavigationAction.Retry);
+        }
         private async Task CheckTaskCompletion(bool isLastTaskInSection)
         {
             _allTasksCompleted = await _simulationManager.AreAllTasksCompleted();
@@ -165,994 +833,39 @@ namespace JobSimulation.Forms
             }
         }
 
-        private async void frmSimulationSoftware_Load(object sender, EventArgs e)
+        private void progressBar1_Click(object sender, EventArgs e)
         {
-            DisableAllButtonsExceptStartAndClose(); // Ensure only btnStart and btnClose are enabled
+            int totalTasks = _simulationManager.GetTotalTaskCount();
+            int completedTasks = _simulationManager.GetCompletedTaskCount();
+            int totalSections = _simulationManager.GetTotalSectionCount();
+            int completedSections = _simulationManager.GetCompletedSectionCount();
 
-            // Explicitly check if the current section is the last section
-            _isLastSection = await _sectionRepository.IsLastSectionAsync(_sectionId, _simulationId);
+            int total = totalTasks + totalSections;
+            int done = completedTasks + completedSections;
+            int percent = total == 0 ? 0 : (int)((done / (double)total) * 100);
 
-            Debug.WriteLine($"[DEBUG] frmSimulationSoftware_Load - _isLastSection: {_isLastSection}");
-
-            // Update btnCompleteSimulation based on _isLastSection
-            if (_isLastSection)
-            {
-                btnCompleteSimulation.Visible = true; // Make it visible
-                btnCompleteSimulation.Enabled = false; // Disable it until btnStart is clicked
-            }
-
-            await UpdateSectionNavigationButtons(_sectionId, enableNavigation: false); // Skip enabling navigation buttons on load
+            MessageBox.Show(
+                $"Tasks Completed: {completedTasks}/{totalTasks}\n" +
+                $"Sections Completed: {completedSections}/{totalSections}\n" +
+                $"Overall Progress: {percent}%",
+                "Progress Details",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
-        private async Task UpdateSectionNavigationButtons(string sectionId, bool enableNavigation = true)
-        {
-            // Disable all navigation buttons initially
-            btnSaveandNextSession.Enabled = false;
-            btnSaveandPreviousSession.Enabled = false;
-
-            if (enableNavigation)
-            {
-                // Update navigation buttons based on section availability
-                if (!_isLastSection)
-                {
-                    btnSaveandNextSession.Enabled = await _sectionRepository.GetNextSectionAsync(_simulationId, sectionId) != null;
-                }
-
-                btnSaveandPreviousSession.Enabled = await _sectionRepository.GetPreviousSectionByOrderAsync(_simulationId, _currentSection.Order) != null;
-            }
-        }
-        public void SetCurrentTaskIndex(int taskIndex)
-        {
-            if (taskIndex >= 0 && taskIndex < tasks.Count)
-            {
-                currentTaskIndex = taskIndex;
-            }
-        }
-
-        public void SetElapsedTime(int elapsedTime)
-        {
-            timeElapsed = elapsedTime;
-            lblTimer.Text = $"Time: {timeElapsed} sec";
-        }
-
-        private void UpdateNavigationButtons()
-        {
-            btnPrevious.Enabled = _simulationManager.CurrentTaskIndex > 0;
-            btnNext.Enabled = _simulationManager.CurrentTaskIndex < _simulationManager.Tasks.Count - 1;
-        }
-
-        private void InitializeComponents()
-        {
-            activityTimer = new Timer { Interval = 1000 };
-            activityTimer.Tick += Timer_Tick;
-
-            InitializeUI();
-            DisableControls();
-        }
-
-        private void InitializeUI()
-        {
-            // Ensure the initial UI state when the form is loaded
-            lblTimer.Visible = false;
-            btnPrevious.Enabled = false;
-            btnNext.Enabled = false;
-
-            DisableControls(); // Call DisableControls to set the initial state
-        }
-
-        private void DisableControls()
-        {
-            // Disable all buttons except btnStart and btnClose
-            btnCheckAnswer.Enabled = false;
-            btnPrevious.Enabled = false;
-            btnNext.Enabled = false;
-            btnHint.Enabled = false;
-            btnSaveandNextSession.Enabled = false; // Ensure this is always disabled initially
-            btnSaveandPreviousSession.Enabled = false; // Ensure this is always disabled initially
-            btnCompleteSimulation.Enabled = false;
-            btnSaveandExit.Enabled = false;
-
-            btnStart.Enabled = true; // Ensure btnStart is enabled
-            btnClose.Enabled = true; // Allow closing the application
-        }
-
-        private async void EnableControls()
-        {
-            // Enable basic buttons
-            btnCheckAnswer.Enabled = true;
-            btnPrevious.Enabled = true;
-            btnNext.Enabled = true;
-            btnHint.Enabled = true;
-
-            // Enable navigation buttons based on section availability
-            btnSaveandNextSession.Enabled = !_isLastSection && (await _sectionRepository.GetNextSectionAsync(_simulationId, _sectionId) != null);
-            btnSaveandPreviousSession.Enabled = await _sectionRepository.GetPreviousSectionByOrderAsync(_simulationId, _currentSection.Order) != null;
-
-            // Enable completion and save/exit buttons
-            btnCompleteSimulation.Enabled = _isLastSection; // Enable only if it's the last section
-            btnSaveandExit.Enabled = true;
-
-            btnStart.Enabled = false; // Disable btnStart after it's clicked
-        }
-
-        private void StartTimers()
-        {
-            activityTimer.Start();
-        }
-
-        private void LoadMasterData()
-        {
-            Debug.WriteLine($"[DEBUG] LoadMasterData called. Current Section: {_currentSection.SectionId}");
-            _simulationManager.LoadMasterData();
-        }
-
-        private async Task LoadTask(int taskIndex)
-        {
-            var task = await _simulationManager.LoadTaskAsync(taskIndex);
-            if (task == null)
-            {
-                MessageBox.Show("Invalid task index.");
-                return;
-            }
-
-            dynamic details = task.Details;
-            label1.Text = details?.TaskDescription ?? task.Description;
-            label1.Visible = true;
-            label2.Text = $"Task {taskIndex + 1} of {_simulationManager.Tasks.Count}";
-
-            lblTimer.Visible = true;
-            lblTimer.Text = $"Time: {_simulationManager.CurrentTaskElapsedTime} sec";
-        }
-
-        private async void btnCheckAnswer_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                var resultMessage = await _simulationManager.CheckAnswerAsync(_simulationManager.CurrentTaskIndex);
-                MessageBox.Show(resultMessage, "Result", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                // Ensure the section does not change when clicking the Check Answer button
-                // Update the status of the SkillMatrix table to Completed and increment TaskAttempt
-                //await _simulationManager.UpdateSkillMatrixStatusAndAttempt(_simulationManager.CurrentTaskIndex);
-
-                // Check if all tasks are completed and handle accordingly
-                //await CheckTaskCompletion(isLastTaskInSection: false);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error validating task: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private async void Timer_Tick(object sender, EventArgs e)
-        {
-            await _simulationManager.IncrementTimeElapsedAsync();
-            lblTimer.Text = $"Time: {_simulationManager.CurrentTaskElapsedTime} sec";
-        }
-
-        private async void AutosaveTimer_Tick(object sender, EventArgs e)
-        {
-            try
-            {
-                await _simulationManager.SaveProgressAsync();
-                Console.WriteLine($"Auto-saved at {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Auto-save error: {ex.Message}");
-            }
-        }
-
-        private async void btnHint_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                var hint = await _simulationManager.GetHintAsync(_simulationManager.CurrentTaskIndex);
-                MessageBox.Show(hint, "Hint");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error fetching hint: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private async void btnSaveAndExit_Click(object sender, EventArgs e)
-        {
-            await CloseFileAndExitAsync();
-        }
-
-        private async Task CloseFileAndExitAsync()
-        {
-            try
-            {
-                // 1. Save progress while the file is still available
-                if (!string.IsNullOrEmpty(_simulationManager?.FilePath) &&
-                    File.Exists(_simulationManager.FilePath))
-                {
-                    // Force save while the file still exists
-                    await _simulationManager.SaveProgressAsync();
-                }
-                else
-                {
-                    // Skip save if file is already gone
-                    Debug.WriteLine("File path is null or already deleted before SaveProgress.");
-                }
-
-                // 2. Close and delete the file safely
-                if (!string.IsNullOrEmpty(_simulationManager?.FilePath))
-                {
-                    FileService fileService = new FileService();
-
-                    // Close the file (kills Notepad, Excel, etc.)
-                    fileService.CloseFile(_simulationManager.FilePath);
-
-                    // Wait to ensure it's closed fully (very important)
-                    await Task.Delay(300); // Optional: Increase to 500ms if needed
-
-                    // Delete after close
-                    if (File.Exists(_simulationManager.FilePath))
-                        fileService.DeleteFile(_simulationManager.FilePath);
-                }
-
-                // 3. Now exit
-                Application.Exit();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error while saving or closing file: {ex.Message}", "Exit Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-
-        private async void btnStart_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                if (_simulationManager.Tasks.Count == 0)
-                {
-                    MessageBox.Show("No tasks to load. Please check the section.");
-                    return;
-                }
-
-                await LoadTask(_simulationManager.CurrentTaskIndex);
-                SetElapsedTime(_simulationManager.CurrentTaskElapsedTime);
-                label2.Text = $"Task {currentTaskIndex + 1} of {_simulationManager.Tasks.Count}";
-
-                MessageBox.Show("Process started!");
-
-                StartTimers();
-
-                EnableControls(); // Enable all relevant buttons
-                if (_isLastSection)
-                {
-                    btnCompleteSimulation.Enabled = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"An error occurred: {ex.Message}");
-            }
-        }
-        private async Task LoadCurrentTask()
-        {
-            await LoadTask(_simulationManager.CurrentTaskIndex);
-        }
-
-        private void UpdateUI()
-        {
-            InitializeUI();
-        }
-
-        private void CloseFile(string filePath)
-        {
-            try
-            {
-                var processName = GetProcessNameForFileType(filePath);
-                if (!string.IsNullOrEmpty(processName))
-                {
-                    foreach (var process in Process.GetProcessesByName(processName))
-                        process.Kill();
-                }
-                if (File.Exists(filePath)) File.Delete(filePath);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error closing file: {ex.Message}");
-            }
-        }
-
-        private string GetProcessNameForFileType(string filePath) =>
-            Path.GetExtension(filePath)?.ToLower() switch
-            {
-                ".xlsx" or ".xls" => "EXCEL",
-                ".pdf" => "Acrobat",
-                ".docx" or ".doc" => "WINWORD",
-                ".pptx" or ".ppt" => "POWERPNT",
-                ".txt" => "notepad",
-                _ => null
-            };
-
-        private async void btnNext_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                activityTimer.Stop();
-                await _simulationManager.SaveProgressAsync();
-
-                if (_simulationManager.CurrentTaskIndex < _simulationManager.Tasks.Count - 1)
-                {
-                    _simulationManager.MoveToNextTask();
-                    await LoadCurrentTask();
-                }
-
-                UpdateNavigationButtons();
-                activityTimer.Start();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error: {ex.Message}");
-            }
-        }
-
-        private async void btnPrevious_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                activityTimer.Stop();
-                await _simulationManager.SaveProgressAsync();
-
-                _simulationManager.MoveToPreviousTask();
-                await LoadCurrentTask();
-                UpdateNavigationButtons();
-
-                activityTimer.Start();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error: {ex.Message}");
-            }
-        }
-
-        private async void btnSaveandNextSession_Click(object sender, EventArgs e)
-        {
-            activityTimer.Stop();
-            await _simulationManager.SaveProgressAsync();
-
-            if (_allTasksCompleted || await CheckForceMoveToNextSection())
-            {
-                NavigateToSection?.Invoke(this, SectionNavigationAction.Next);
-            }
-        }
-
-        private async void btnSaveandPreviousSession_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                activityTimer.Stop();
-                await _simulationManager.SaveProgressAsync();
-                NavigateToSection?.Invoke(this, SectionNavigationAction.Previous);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error saving progress: {ex.Message}");
-            }
-        }
-
-        private async Task<bool> CheckForceMoveToNextSection()
-        {
-            var result = MessageBox.Show(
-                "You haven't completed all tasks. Move to next section anyway?",
-                "Confirm Navigation",
-                MessageBoxButtons.YesNo);
-
-            return result == DialogResult.Yes;
-        }
-
-        private async void btnCompleteSimulation_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                // Check if all tasks are completed
-                bool allTasksCompleted = await _simulationManager.AreAllTasksCompleted();
-
-                if (!allTasksCompleted)
-                {
-                    var result = MessageBox.Show(
-                        "Not all tasks are completed. Are you sure you want to submit?",
-                        "Confirm Submission",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Warning);
-
-                    if (result != DialogResult.Yes)
-                        return;
-
-                    // Mark unvisited tasks as Incomplete
-                    await _simulationManager.MarkUnvisitedTasksAsInCompleted();
-                }
-
-                // Fetch all activities (sections) for the simulation
-                var allActivities = await _simulationManager.GetAllActivitiesForSimulationAsync();
-
-                // Calculate and save results for all sections
-                foreach (var activity in allActivities)
-                {
-                    var sectionResult = await _simulationManager.UpdateSectionResultAsync(activity.ActivityId); // Reuse UpdateSectionResultAsync
-                    activity.Result = sectionResult;
-                    activity.Status = StatusTypes.Completed;
-                    activity.ModifyBy = _userId;
-                    activity.ModifyDate = DateTime.Now;
-
-                    // Save the updated activity for the section
-                    await _simulationManager.SaveActivityAsync(activity);
-                }
-
-                // Calculate overall result across all sections
-                var simulationResult = await _simulationManager.CalculateSimulationResultAsync(_simulationId);
-                MessageBox.Show($"Simulation completed. Overall Result: {simulationResult}",
-                    "Simulation Completed",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-
-                // Ensure both forms close and navigate to login
-                CloseAllAndOpenLogin();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"An error occurred while completing the simulation: {ex.Message}",
-                    "Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
-        }
-
-        private void CloseAllAndOpenLogin()
-        {
-            // Close frmSectionLauncher if it is open
-            //var sectionLauncherForm = Application.OpenForms.OfType<frmSectionLauncher>().FirstOrDefault();
-            //if (sectionLauncherForm != null)
-            //{
-            //    sectionLauncherForm.Close();
-            //}
-
-            // Subscribe to FormClosed event to ensure navigation happens after forms are closed
-            this.FormClosed += (s, e) =>
-            {
-                // Show the login form after closing all forms
-                var loginForm = new frmUserLogin(_userRepository);
-                loginForm.Show();
-            };
-
-            // Close this form
-            this.Close();
-        }
-        public async Task UpdateSectionDataAsync(
-       List<JobTask> newTasks,
-       string newFilePath,
-       string newSectionId,
-       string newSoftwareId,
-       string newActivityId,
-       bool isLastSection,
-       Section newCurrentSection,
-       int newAttempt,
-       int newTaskIndex)
-        {
-            await _simulationManager.UpdateSectionDataAsync(
-                newTasks,
-                newFilePath,
-                newSectionId,
-                newSoftwareId,
-                newActivityId,
-                newAttempt,
-                newCurrentSection,
-                newTaskIndex
-            );
-
-            // Update whether this is the last section
-            _isLastSection = isLastSection;
-            _currentSection = newCurrentSection;
-            _sectionId = newSectionId;
-
-            // Update navigation buttons
-            await UpdateSectionNavigationButtons(newSectionId);
-
-            // Reset UI elements
-            await LoadCurrentTask();
-            label2.Text = $"Task {_simulationManager.CurrentTaskIndex + 1} of {_simulationManager.Tasks.Count}";
-            lblTimer.Text = "Time: 0 sec";
-
-            label1.Text = string.Empty;
-            label1.Visible = false;
-            lblTimer.Visible = false;
-
-            btnStart.Enabled = true;
-            btnStart.Visible = true;
-
-            btnSaveandNextSession.Visible = true;
-
-            // Explicitly set visibility and state of btnCompleteSimulation
-            btnCompleteSimulation.Visible = _isLastSection;
-            //btnCompleteSimulation.Enabled = _isLastSection;
-
-            DisableAllButtonsExceptStartAndClose();
-        }
-
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            CloseFileAndExitAsync();
             base.OnFormClosing(e);
-        }
 
-        private void frmSimulationSoftware_FormClosed(object sender, FormClosedEventArgs e)
-        {
-            if (!string.IsNullOrEmpty(_simulationManager?.FilePath))
+            // Ensure form closes even if something fails
+            if (!e.Cancel)
             {
-                CloseFile(_simulationManager.FilePath);
+                this.Dispose();
+                Application.Exit();
             }
-
-            activityTimer?.Stop();
-            activityTimer?.Dispose();
-        }
+        }        //protected override void OnFormClosing(FormClosingEventArgs e)
     }
 }
 
 
 
-//using System;
-//using System.Collections.Generic;
-//using System.Linq;
-//using System.Threading.Tasks;
-//using System.Windows.Forms;
-//using JobSimulation.BLL;
-//using JobSimulation.DAL;
-//using JobSimulation.Models;
-//using JobSimulation.Managers;
-//using System.Data;
 
-//namespace JobSimulation.Forms
-//{
-//    public partial class frmSimulationSoftware : Form
-//    {
-//        public event EventHandler<SectionNavigationAction> NavigateToSection;
-//        public event EventHandler SectionCompleted;
-
-//        private readonly SimulationManager _simulationManager;
-//        private readonly SectionRepository _sectionRepository;
-//        private readonly string _simulationId;
-//        private readonly string _userId;
-
-//        private System.Windows.Forms.Timer _activityTimer;
-//        private bool _isLastSection;
-//        private int _currentTaskIndex;
-//        private Section _currentSection;
-//        private string _sectionId;
-//        private bool _allTasksCompleted;
-//        private int timeElapsed = 0; // Tracks the elapsed time for the current task
-
-//        public frmSimulationSoftware(
-//            List<JobTask> tasks,
-//            string filePath,
-//            string sectionId,
-//            string simulationId,
-//            string userId,
-//            SectionRepository sectionRepository,
-//            FileService fileService,
-//            SkillMatrixRepository skillMatrixRepository,
-//            ActivityRepository activityRepository,
-//            TaskRepository taskRepository,
-//            TaskService taskService,
-//            SectionService sectionService,
-//            UserRepository userRepository,
-//            string softwareId,
-//            string activityId,
-//            DataSet progressDataSet,
-//            int attempt,
-//            Section currentSection,
-//            bool isLastSection,
-//            int currentTaskIndex)
-//        {
-//            InitializeComponent();
-//            InitializeDynamicUI();
-
-//            _simulationManager = new SimulationManager(
-//                tasks,
-//                filePath,
-//                simulationId,
-//                userId,
-//                fileService,
-//                skillMatrixRepository,
-//                activityRepository,
-//                taskRepository,
-//                taskService,
-//                progressDataSet,
-//                attempt,
-//                currentSection,
-//                activityId,
-//                currentTaskIndex
-//            );
-
-//            _sectionRepository = sectionRepository;
-//            _simulationId = simulationId;
-//            _userId = userId;
-//            _sectionId = sectionId;
-//            _isLastSection = isLastSection;
-//            _currentTaskIndex = currentTaskIndex;
-//            _currentSection = currentSection;
-
-//            InitializeComponents();
-//        }
-//        private void InitializeUI()
-//        {
-//            lblTimer.Visible = false;
-//            btnPrevious.Enabled = false;
-//            btnNext.Enabled = false;
-
-//            DisableControls(); // Ensure the initial state of buttons
-//        }
-//        private void DisableControls()
-//        {
-//            btnCheckAnswer.Enabled = false;
-//            btnPrevious.Enabled = false;
-//            btnNext.Enabled = false;
-//            btnHint.Enabled = false;
-//            btnSaveandNextSession.Enabled = false;
-//            btnSaveandPreviousSession.Enabled = false;
-//            btnCompleteSimulation.Enabled = false;
-//            btnSaveandExit.Enabled = false;
-
-//            btnStart.Enabled = true;
-//            btnClose.Enabled = true;
-//        }
-//        private void InitializeDynamicUI()
-//        {
-//            btnCompleteSimulation.Visible = false;
-//            btnSaveandNextSession.Visible = true;
-//            btnStart.Enabled = true;
-//        }
-//        private async void Timer_Tick(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                timeElapsed++;
-//                lblTimer.Text = $"Time: {timeElapsed} sec";
-
-//                // Save elapsed time every 10 seconds
-//                if (timeElapsed % 10 == 0)
-//                {
-//                    await _simulationManager.SaveElapsedTimeForTaskAsync(_simulationId, _currentTaskIndex, timeElapsed);
-//                }
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error during timer tick", ex);
-//            }
-//        }
-//        public void SetElapsedTime(int elapsedTime)
-//        {
-//            timeElapsed = elapsedTime;
-//            lblTimer.Text = $"Time: {timeElapsed} sec";
-//        }
-//        private void InitializeComponents()
-//        {
-//            _activityTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-//            _activityTimer.Tick += Timer_Tick;
-
-//            InitializeUI();
-//            DisableControls();
-//        }
-//        private void StartTimers()
-//        {
-//            _activityTimer.Start();
-//        }
-
-//        private void StopTimers()
-//        {
-//            _activityTimer.Stop();
-//        }
-//        private void DisableAllButtonsExceptStartAndClose()
-//        {
-//            foreach (var button in Controls.OfType<Button>())
-//            {
-//                button.Enabled = false;
-//            }
-//            btnStart.Enabled = true;
-//            btnClose.Enabled = true;
-//        }
-
-//        private async void frmSimulationSoftware_Load(object sender, EventArgs e)
-//        {
-//            DisableAllButtonsExceptStartAndClose();
-//            _isLastSection = await _sectionRepository.IsLastSectionAsync(_sectionId, _simulationId);
-//            UpdateCompleteSimulationButton();
-//            await UpdateSectionNavigationButtons(_sectionId, enableNavigation: false);
-//        }
-
-//        private async Task UpdateSectionNavigationButtons(string sectionId, bool enableNavigation)
-//        {
-//            btnSaveandNextSession.Enabled = enableNavigation && !_isLastSection &&
-//                                             await _sectionRepository.GetNextSectionAsync(_simulationId, sectionId) != null;
-
-//            btnSaveandPreviousSession.Enabled = enableNavigation &&
-//                                                 await _sectionRepository.GetPreviousSectionByOrderAsync(_simulationId, _currentSection.Order) != null;
-//        }
-
-//        private void UpdateCompleteSimulationButton()
-//        {
-//            btnCompleteSimulation.Visible = _isLastSection;
-//            btnCompleteSimulation.Enabled = false;
-//        }
-
-//        private async void btnHint_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                var hint = await _simulationManager.GetHintAsync(_currentTaskIndex);
-//                MessageBox.Show(hint, "Hint");
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error fetching hint", ex);
-//            }
-//        }
-
-//        private async void btnSaveandNextSession_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                _activityTimer.Stop(); // Stop the timer
-//                await _simulationManager.SaveProgressAsync(); // Save progress
-
-//                if (_allTasksCompleted || await CheckForceMoveToNextSection())
-//                {
-//                    UnloadTask(); // Clear the current task
-//                    NavigateToSection?.Invoke(this, SectionNavigationAction.Next);
-//                }
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error saving and navigating to the next section", ex);
-//            }
-//        }
-
-//        private async void btnSaveandPreviousSession_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                _activityTimer.Stop(); // Stop the timer
-//                await _simulationManager.SaveProgressAsync(); // Save progress
-
-//                UnloadTask(); // Clear the current task
-//                NavigateToSection?.Invoke(this, SectionNavigationAction.Previous);
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error saving and navigating to the previous section", ex);
-//            }
-//        }
-//        private void SetElapsedTime(int elapsedTime)
-//        {
-//            timeElapsed = elapsedTime;
-//            lblTimer.Text = $"Time: {timeElapsed} sec";
-//        }
-//        public async Task UpdateSectionDataAsync(
-//            List<JobTask> newTasks,
-//            string newFilePath,
-//            string newSectionId,
-//            string newSoftwareId,
-//            string newActivityId,
-//            bool isLastSection,
-//            Section newCurrentSection,
-//            int newAttempt,
-//            int newTaskIndex)
-//        {
-//            await _simulationManager.UpdateSectionDataAsync(
-//                newTasks,
-//                newFilePath,
-//                newSectionId,
-//                newSoftwareId,
-//                newActivityId,
-//                newAttempt,
-//                newCurrentSection,
-//                newTaskIndex
-//            );
-
-//            _isLastSection = isLastSection;
-//            _currentSection = newCurrentSection;
-//            _sectionId = newSectionId;
-//            _currentTaskIndex = newTaskIndex;
-
-//            UpdateCompleteSimulationButton();
-//            await LoadTask(_currentTaskIndex);
-//        }
-
-//        private async void btnStart_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                if (!_simulationManager.Tasks.Any())
-//                {
-//                    MessageBox.Show("No tasks to load. Please check the section.");
-//                    return;
-//                }
-
-//                // Load the current task and fetch the stored elapsed time from the database
-//                await LoadTask(_currentTaskIndex);
-//                int elapsedTime = await _simulationManager.GetElapsedTimeForTaskAsync(_simulationId, _currentTaskIndex);
-//                SetElapsedTime(elapsedTime); // Display the elapsed time in the UI
-
-//                StartTimers(); // Start the timer from the stored elapsed time
-//                EnableControls(); // Enable buttons for navigation and actions
-
-//                btnStart.Enabled = false; // Disable the Start button to avoid multiple clicks
-//                btnCompleteSimulation.Enabled = _isLastSection; // Enable the Complete Simulation button if it's the last section
-
-//                MessageBox.Show("Process started!");
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error starting the simulation", ex);
-//            }
-//        }
-
-//        private async void btnNext_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                _activityTimer.Stop(); // Stop the timer
-//                await _simulationManager.SaveElapsedTimeForTaskAsync(_simulationId, _currentTaskIndex, timeElapsed); // Save elapsed time
-
-//                if (_currentTaskIndex < _simulationManager.Tasks.Count - 1)
-//                {
-//                    _currentTaskIndex++;
-//                    UnloadTask(); // Clear the current task
-//                    await LoadTask(_currentTaskIndex); // Load the next task
-
-//                    // Fetch and set the elapsed time for the new task
-//                    int elapsedTime = await _simulationManager.GetElapsedTimeForTaskAsync(_simulationId, _currentTaskIndex);
-//                    SetElapsedTime(elapsedTime);
-
-//                    StartTimers(); // Restart the timer
-//                }
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error navigating to the next task", ex);
-//            }
-//        }
-//        private async void btnPrevious_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                _activityTimer.Stop(); // Stop the timer
-//                await _simulationManager.SaveElapsedTimeForTaskAsync(_simulationId, _currentTaskIndex, timeElapsed); // Save elapsed time
-
-//                if (_currentTaskIndex > 0)
-//                {
-//                    _currentTaskIndex--;
-//                    UnloadTask(); // Clear the current task
-//                    await LoadTask(_currentTaskIndex); // Load the previous task
-
-//                    // Fetch and set the elapsed time for the new task
-//                    int elapsedTime = await _simulationManager.GetElapsedTimeForTaskAsync(_simulationId, _currentTaskIndex);
-//                    SetElapsedTime(elapsedTime);
-
-//                    StartTimers(); // Restart the timer
-//                }
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error navigating to the previous task", ex);
-//            }
-//        }
-
-//        private async Task LoadTask(int taskIndex)
-//        {
-//            if (taskIndex < 0 || taskIndex >= _simulationManager.Tasks.Count)
-//            {
-//                MessageBox.Show("Invalid task index.");
-//                return;
-//            }
-
-//            var task = await _simulationManager.LoadTaskAsync(taskIndex);
-//            if (task == null)
-//            {
-//                MessageBox.Show("Task could not be loaded.");
-//                return;
-//            }
-
-//            label1.Text = task.Details?.TaskDescription ?? task.Description;
-//            label2.Text = $"Task {taskIndex + 1} of {_simulationManager.Tasks.Count}";
-
-//            lblTimer.Visible = true;
-
-//            // Fetch and set the elapsed time for the task
-//            int elapsedTime = await _simulationManager.GetElapsedTimeForTaskAsync(_simulationId, taskIndex);
-//            SetElapsedTime(elapsedTime);
-//        }
-//        private void UnloadTask()
-//        {
-//            label1.Text = string.Empty;
-//            label2.Text = string.Empty;
-//            lblTimer.Visible = false;
-
-//            _activityTimer.Stop(); // Stop the timer
-//            timeElapsed = 0; // Reset the elapsed time
-//            lblTimer.Text = "Time: 0 sec";
-//        }
-//        private void EnableControls()
-//        {
-//            btnCheckAnswer.Enabled = true;
-//            btnPrevious.Enabled = true;
-//            btnNext.Enabled = true;
-//            btnHint.Enabled = true;
-//            btnSaveandNextSession.Enabled = true;
-//            btnSaveandPreviousSession.Enabled = true;
-//            btnSaveandExit.Enabled = true;
-//            btnStart.Enabled = false;
-//        }
-
-//        private async void btnCheckAnswer_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                var result = await _simulationManager.CheckAnswerAsync(_currentTaskIndex);
-//                MessageBox.Show(result, "Result", MessageBoxButtons.OK, MessageBoxIcon.Information);
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error checking the answer", ex);
-//            }
-//        }
-
-//        private async Task<bool> CheckForceMoveToNextSection()
-//        {
-//            var result = MessageBox.Show("You haven't completed all tasks. Move to next section anyway?", "Confirm Navigation", MessageBoxButtons.YesNo);
-//            return result == DialogResult.Yes;
-//        }
-//        private async void btnSaveAndExit_Click(object sender, EventArgs e)
-//        {
-//            await CloseFileAndExitAsync();
-//        }
-//        public void SetCurrentTaskIndex(int taskIndex)
-//        {
-//            if (taskIndex >= 0 && taskIndex < _simulationManager.Tasks.Count)
-//            {
-//                _currentTaskIndex = taskIndex;
-//            }
-//        }
-//        private async void btnCompleteSimulation_Click(object sender, EventArgs e)
-//        {
-//            try
-//            {
-//                if (!_allTasksCompleted)
-//                {
-//                    MessageBox.Show("Please complete all tasks before finishing the simulation.");
-//                    return;
-//                }
-
-//                await _simulationManager.SaveProgressAsync();
-//                MessageBox.Show("Congratulations! You've completed the entire simulation.");
-//                Application.Exit();
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error completing the simulation", ex);
-//            }
-//        }
-//        private async Task CloseFileAndExitAsync()
-//        {
-//            try
-//            {
-//                await _simulationManager.SaveProgressAsync();
-//                MessageBox.Show("Progress saved successfully.");
-//                Application.Exit();
-//            }
-//            catch (Exception ex)
-//            {
-//                HandleError("Error saving and exiting", ex);
-//            }
-//        }
-//        private void HandleError(string context, Exception ex)
-//        {
-//            MessageBox.Show($"{context}: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-//        }
-//    }
-//}

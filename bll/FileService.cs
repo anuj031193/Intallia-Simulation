@@ -101,7 +101,7 @@ namespace JobSimulation.BLL
                     command.Parameters.AddWithValue("@UserId", userId);
                     command.Parameters.AddWithValue("@StudentFile", base64File);
                     command.Parameters.AddWithValue("@ModifyBy", userId);
-                    command.Parameters.AddWithValue("@ModifyDate", DateTime.UtcNow);
+                    command.Parameters.AddWithValue("@ModifyDate", DateTime.Now);
                     command.Parameters.AddWithValue("@Status", "Incomplete");
                     command.ExecuteNonQuery();
                 }
@@ -169,6 +169,7 @@ namespace JobSimulation.BLL
             "S4" => ".gsheet",
             "S5" => ".gdoc",
             "S6" => ".gslides",
+            "S7" => ".pbix",
             _ => throw new ArgumentException("Unknown software ID")
         };
 
@@ -187,44 +188,72 @@ namespace JobSimulation.BLL
                 string extension = Path.GetExtension(filePath).ToLower();
                 if (extension is ".gdoc" or ".gsheet" or ".gslides")
                 {
-                    Process.Start(new ProcessStartInfo("https://drive.google.com") { UseShellExecute = true });
+                    // Open in existing Chrome window if possible
+                    Process.Start(new ProcessStartInfo("chrome")
+                    {
+                        Arguments = $"--new-window {filePath}",
+                        UseShellExecute = true
+                    });
                 }
                 else
                 {
-                    Process.Start(new ProcessStartInfo(filePath)
+                    // Use single instance for Office files
+                    var process = new Process
                     {
-                        UseShellExecute = true,
-                        WindowStyle = ProcessWindowStyle.Maximized
-                    })?.WaitForInputIdle();
+                        StartInfo = new ProcessStartInfo(filePath)
+                        {
+                            UseShellExecute = true,
+                            WindowStyle = ProcessWindowStyle.Maximized
+                        }
+                    };
+                    process.Start();
                 }
             }
             catch (Exception ex)
             {
-                System.Windows.Forms.MessageBox.Show($"Error opening file: {ex.Message}");
+                MessageBox.Show($"Error opening file: {ex.Message}");
             }
         }
-
+        private void RetryPolicy(Action action, int maxRetries = 3, int delay = 1000)
+        {
+            for (int attempt = 0; attempt < maxRetries; attempt++)
+            {
+                try
+                {
+                    action();
+                    return; // Exit if the action succeeds
+                }
+                catch (IOException) when (attempt < maxRetries - 1)
+                {
+                    System.Threading.Thread.Sleep(delay); // Wait before retrying
+                }
+            }
+        }
         public void CloseFile(string filePath)
         {
+            if (string.IsNullOrEmpty(filePath)) return;
+
             try
             {
-                var processName = GetProcessNameForFileType(filePath);
+                string processName = GetProcessNameForFileType(filePath);
+
                 if (!string.IsNullOrEmpty(processName))
                 {
+                    // Close all instances of the software
                     foreach (var process in Process.GetProcessesByName(processName))
                     {
-                        if (process.MainWindowTitle.Contains(Path.GetFileNameWithoutExtension(filePath)))
+                        try
                         {
                             process.Kill();
+                            process.WaitForExit(1000);
                         }
+                        catch { /* Ignore cleanup errors */ }
                     }
                 }
-
-                if (File.Exists(filePath)) File.Delete(filePath);
             }
-            catch
+            catch (Exception ex)
             {
-                // Silent fail
+                Debug.WriteLine($"Error closing file: {ex.Message}");
             }
         }
         public string OpenStudentFileFromBytes(byte[] fileBytes, string sectionId, string softwareId, string userId, string activityId)
@@ -247,16 +276,22 @@ namespace JobSimulation.BLL
             return filePath;
         }
 
-        private string GetProcessNameForFileType(string filePath) =>
-            Path.GetExtension(filePath)?.ToLower() switch
+        private string GetProcessNameForFileType(string filePath)
+        {
+            string extension = Path.GetExtension(filePath)?.ToLower();
+
+            return extension switch
             {
-                ".xlsx" or ".xls" => "EXCEL",
-                ".pdf" => "Acrobat",
-                ".docx" or ".doc" => "WINWORD",
-                ".pptx" or ".ppt" => "POWERPNT",
-                ".txt" => "notepad",
+                ".xlsx" => "EXCEL",
+                ".docx" => "WINWORD",
+                ".pptx" => "POWERPNT",
+                ".gsheet" => "chrome",    // Google Sheets
+                ".gdoc" => "chrome",       // Google Docs
+                ".gslides" => "chrome",    // Google Slides
+                ".pbix" => "PBIDesktop",   // Power BI
                 _ => null
             };
+        }
 
         private bool IsFileLocked(string filePath)
         {

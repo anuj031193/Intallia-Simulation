@@ -42,4 +42,31 @@ namespace JobSimulation.DAL
         }
     }
 
+
+    public class PowerPointDatabase
+    {
+        private readonly FileService _fileService;
+
+        public PowerPointDatabase(FileService fileService)
+        {
+            _fileService = fileService ?? throw new ArgumentNullException(nameof(fileService));
+        }
+
+        public string FetchMasterJson(string sectionId)
+        {
+            return _fileService.FetchSectionJson(sectionId);
+        }
+    }
+    public class PowerBiDatabase
+    {
+        private readonly FileService _fileService;
+        public PowerBiDatabase(FileService fileService)
+        {
+            _fileService = fileService ?? throw new ArgumentNullException(nameof(fileService));
+        }
+        public string FetchMasterJson(string sectionId)
+        {
+            return _fileService.FetchSectionJson(sectionId);
+        }
+    }
 }

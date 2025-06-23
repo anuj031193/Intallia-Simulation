@@ -14,7 +14,17 @@ namespace JobSimulation.DAL
         {
             _connectionString = connectionString;
         }
+        public async Task<bool> IsFirstSectionAsync(string sectionId, string simulationId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
 
+            // Get the first section in the simulation
+            var firstSection = await GetFirstSectionAsync(simulationId);
+
+            // Compare with current section
+            return firstSection?.SectionId == sectionId;
+        }
         public async Task<Section> GetFirstSectionAsync(string simulationId)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -41,20 +51,68 @@ namespace JobSimulation.DAL
             return null;
         }
 
+        //public async Task<bool> IsLastSectionAsync(string currentSectionId, string simulationId)
+        //{
+        //    using var connection = new SqlConnection(_connectionString);
+        //    await connection.OpenAsync();
+
+        //    var query = "SELECT COUNT(*) FROM Section WHERE SimulationId = @SimulationId AND SectionId > @CurrentSectionId";
+        //    using var command = new SqlCommand(query, connection);
+        //    command.Parameters.AddWithValue("@SimulationId", simulationId);
+        //    command.Parameters.AddWithValue("@CurrentSectionId", currentSectionId);
+
+        //    var count = (int)await command.ExecuteScalarAsync();
+        //    return count == 0;
+        //}
         public async Task<bool> IsLastSectionAsync(string currentSectionId, string simulationId)
         {
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            var query = "SELECT COUNT(*) FROM Section WHERE SimulationId = @SimulationId AND SectionId > @CurrentSectionId";
+            var query = @"
+    SELECT CASE 
+        WHEN EXISTS (
+            SELECT 1 
+            FROM Section 
+            WHERE SimulationId = @SimulationId 
+            AND [Order] > (SELECT [Order] FROM Section WHERE SectionId = @CurrentSectionId AND SimulationId = @SimulationId)
+        ) THEN 0
+        ELSE 1
+    END";
+
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@SimulationId", simulationId);
             command.Parameters.AddWithValue("@CurrentSectionId", currentSectionId);
 
-            var count = (int)await command.ExecuteScalarAsync();
-            return count == 0;
+            var result = await command.ExecuteScalarAsync();
+            return Convert.ToInt32(result) == 1;
         }
 
+        //public async Task<bool> IsLastSectionAsync(string currentSectionId, string simulationId)
+        //{
+        //    using var connection = new SqlConnection(_connectionString);
+        //    await connection.OpenAsync();
+
+        //    // Combined query to avoid multiple roundtrips and potential blocking
+        //    var query = @"
+        //SELECT CASE 
+        //    WHEN EXISTS (
+        //        SELECT 1 
+        //        FROM Section 
+        //        WHERE SimulationId = @SimulationId 
+        //        AND [Order] > (SELECT [Order] FROM Section WHERE SectionId = @CurrentSectionId AND SimulationId = @SimulationId)
+        //    ) THEN 0
+        //    ELSE 1
+        //END";
+
+        //    using var command = new SqlCommand(query, connection);
+        //    command.Parameters.AddWithValue("@SimulationId", simulationId);
+        //    command.Parameters.AddWithValue("@CurrentSectionId", currentSectionId);
+        //    command.CommandTimeout = 30; // Set timeout to prevent indefinite hanging
+
+        //    var result = await command.ExecuteScalarAsync();
+        //    return Convert.ToInt32(result) == 1;
+        //}
         public async Task<Section> GetNextSectionAsync(string simulationId, string currentSectionId)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -108,14 +166,15 @@ namespace JobSimulation.DAL
             var count = (int)await command.ExecuteScalarAsync();
             return count > 0;
         }
-        public async Task<Section> GetSectionByIdAsync(string sectionId)
+        public async Task<Section> GetSectionByIdAsync(string sectionId, string simulationId)
         {
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            var query = "SELECT * FROM Section WHERE SectionId = @SectionId";
+            var query = "SELECT * FROM Section WHERE SectionId = @SectionId AND SimulationId = @SimulationId";
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@SectionId", sectionId);
+            command.Parameters.AddWithValue("@SimulationId", simulationId);
 
             using var reader = await command.ExecuteReaderAsync();
             if (await reader.ReadAsync())
@@ -133,7 +192,6 @@ namespace JobSimulation.DAL
 
             return null;
         }
-
         public async Task<Section> GetNextSectionByOrderAsync(string simulationId, int currentOrder)
         {
             using var connection = new SqlConnection(_connectionString);
@@ -251,9 +309,9 @@ namespace JobSimulation.DAL
             command.Parameters.AddWithValue("@UserId", userId);
             command.Parameters.AddWithValue("@StudentFile", base64File);
             command.Parameters.AddWithValue("@CreateBy", userId);
-            command.Parameters.AddWithValue("@CreateDate", DateTime.UtcNow);
+            command.Parameters.AddWithValue("@CreateDate", DateTime.Now);
             command.Parameters.AddWithValue("@ModifyBy", userId);
-            command.Parameters.AddWithValue("@ModifyDate", DateTime.UtcNow);
+            command.Parameters.AddWithValue("@ModifyDate", DateTime.Now);
 
             await command.ExecuteNonQueryAsync();
         }
@@ -322,6 +380,36 @@ namespace JobSimulation.DAL
             }
 
             return sections;
+        }
+
+        public async Task<List<(string SimulationId, string SectionId)>> GetSimulationSectionsForActivityAsync(string activityId)
+        {
+            var result = new List<(string SimulationId, string SectionId)>();
+
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            // If you have a SimulationSection mapping table, use it. 
+            // Here is a typical pattern:
+            var query = @"
+        SELECT ss.SimulationId, ss.SectionId
+        FROM SimulationSection ss
+        INNER JOIN Activity a ON a.SectionId = ss.SectionId
+        WHERE a.ActivityId = @ActivityId";
+
+            using var command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@ActivityId", activityId);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add((
+                    reader["SimulationId"].ToString(),
+                    reader["SectionId"].ToString()
+                ));
+            }
+
+            return result;
         }
 
     }

@@ -20,53 +20,49 @@ namespace JobSimulation.DAL
             connection.Open();
             connection.Close();
         }
-        public async Task<string> ValidateUserAsync(string userId, string password)
+        public async Task<string> ValidateUserAsync(string userIdOrEmail, string password)
         {
             try
             {
                 using var connection = new SqlConnection(_connectionString);
-
-                // Open the connection
                 await connection.OpenAsync();
 
-                if (connection.State == System.Data.ConnectionState.Open)
-                {
-                    Console.WriteLine("Connection to the database established successfully.");
-                }
-                else
+                if (connection.State != System.Data.ConnectionState.Open)
                 {
                     Console.WriteLine("Failed to establish connection to the database.");
-                    return null; // Return null or handle differently
+                    return null;
                 }
 
-                // Prepare query to check user credentials (plain text comparison)
-                var query = "SELECT UserId, Password FROM UserMaster WHERE UserId = @UserId";
+                // Updated query: match by UserId OR Email
+                var query = @"
+            SELECT UserId, Password 
+            FROM UserMaster 
+            WHERE (UserId = @Input OR Email = @Input)";
+
                 using var command = new SqlCommand(query, connection);
-                command.Parameters.AddWithValue("@UserId", userId);
+                command.Parameters.AddWithValue("@Input", userIdOrEmail);
 
                 using var reader = await command.ExecuteReaderAsync();
                 if (await reader.ReadAsync())
                 {
-                    string storedPassword = reader["Password"].ToString(); // Get the plain text password
+                    string storedPassword = reader["Password"].ToString();
 
-                    // Direct comparison of the provided password and the stored password
+                    // Plain text comparison (assumed)
                     if (storedPassword == password)
                     {
-                        return userId; // User validated successfully
+                        return reader["UserId"].ToString(); // Return the actual UserId (even if email was used to log in)
                     }
                 }
 
-                return null; // If no match is found, return null
+                return null;
             }
             catch (SqlException sqlEx)
             {
-                // Catch SQL exceptions and provide more specific error messages
                 Console.WriteLine($"SQL Error: {sqlEx.Message}");
                 return null;
             }
             catch (Exception ex)
             {
-                // Catch general exceptions (e.g., network-related issues)
                 Console.WriteLine($"Error: {ex.Message}");
                 return null;
             }

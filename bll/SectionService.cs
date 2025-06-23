@@ -25,10 +25,7 @@ namespace JobSimulation.BLL
             _taskRepository = taskRepository;
         }
 
-        public async Task<List<JobTask>> GetAllTasksForSectionAsync(string sectionId, string userId)
-        {
-            return await _taskRepository.GetTasksBySectionIdAsync(sectionId, userId);
-        }
+       
 
         public async Task<Section> LoadNextSectionAsync(string userId, string simulationId, string currentSectionId = null)
         {
@@ -42,7 +39,7 @@ namespace JobSimulation.BLL
                 throw new ArgumentNullException(nameof(simulationId), "Simulation ID cannot be null or empty.");
             }
 
-            var lastSession = await _activityRepository.GetLastSessionForUserAsync(userId);
+            var lastSession = await _activityRepository.GetLastSessionForUserAsync(userId, simulationId);
 
             if (lastSession == null)
             {
@@ -64,7 +61,7 @@ namespace JobSimulation.BLL
                 return nextSection;
             }
 
-            var currentSection = await _repository.GetSectionByIdAsync(lastSession.SectionId);
+            var currentSection = await _repository.GetSectionByIdAsync(lastSession.SectionId, simulationId);
             if (currentSection == null)
             {
                 throw new InvalidOperationException($"Section with ID {lastSession.SectionId} not found.");
@@ -81,7 +78,7 @@ namespace JobSimulation.BLL
 
         public async Task<Section> GetNextSectionAsync(string userId, string simulationId, string currentSectionId)
         {
-            var currentActivity = await _activityRepository.GetLastSessionForUserAsync(userId);
+            var currentActivity = await _activityRepository.GetLastSessionForUserAsync(userId, simulationId);
             if (currentActivity != null && currentActivity.SectionId == currentSectionId)
             {
                 var nextSection = await _repository.GetNextSectionAsync(simulationId, currentSectionId);
@@ -103,7 +100,7 @@ namespace JobSimulation.BLL
             try
             {
                 // First get the current section to determine its order
-                var currentSection = await _repository.GetSectionByIdAsync(currentSectionId);
+                var currentSection = await _repository.GetSectionByIdAsync(currentSectionId, simulationId);
                 if (currentSection == null)
                 {
                     Debug.WriteLine($"Current section not found: {currentSectionId}");
@@ -116,7 +113,7 @@ namespace JobSimulation.BLL
                 // If activity exists and is for a different section, use that
                 if (lastActivity != null && lastActivity.SectionId != currentSectionId)
                 {
-                    var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId);
+                    var prevSection = await _repository.GetSectionByIdAsync(lastActivity.SectionId, simulationId);
                     if (prevSection != null)
                     {
                         return prevSection;
@@ -138,33 +135,6 @@ namespace JobSimulation.BLL
                 Debug.WriteLine($"Error fetching previous section: {ex.Message}");
                 return null;
             }
-        }
-        public async Task<bool> ValidateSectionCompletion(string userId, string sectionId)
-        {
-            if (string.IsNullOrEmpty(userId))
-            {
-                throw new ArgumentNullException(nameof(userId), "User ID cannot be null or empty.");
-            }
-
-            if (string.IsNullOrEmpty(sectionId))
-            {
-                throw new ArgumentNullException(nameof(sectionId), "Section ID cannot be null or empty.");
-            }
-
-            var tasks = await _taskRepository.GetTasksBySectionIdAsync(sectionId, userId);
-            var activityId = (await _activityRepository.GetLastSessionForUserAsync(userId)).ActivityId;
-            var skillMatrixEntries = await _skillMatrixRepository.GetSkillMatrixEntriesForActivityAsync(activityId);
-
-            foreach (var task in tasks)
-            {
-                var taskEntry = skillMatrixEntries.FirstOrDefault(sm => sm.TaskId == task.TaskId);
-                if (taskEntry == null || taskEntry.Status != "Completed")
-                {
-                    return false;
-                }
-            }
-
-            return true;
         }
     }
 }

@@ -112,26 +112,64 @@ namespace JobSimulation.excelApp
             }
             return "Unknown Chart Type";
         }
-
         private object GetChartAxes(ChartPart chartPart)
         {
-            var axesData = new
-            {
-                xAxis = GetAxisTitle<CategoryAxis>(chartPart),
-                yAxis = GetAxisTitle<ValueAxis>(chartPart),
-                secondaryYAxis = GetAxisTitle<ValueAxis>(chartPart, 1),
-                zAxis = GetAxisTitle<SeriesAxis>(chartPart)
-            };
+            var xAxis = GetAxisTitle<CategoryAxis>(chartPart);
+            var yAxis = GetAxisTitle<ValueAxis>(chartPart);
 
-            if (!string.IsNullOrEmpty(axesData.xAxis) || !string.IsNullOrEmpty(axesData.yAxis) ||
-                !string.IsNullOrEmpty(axesData.secondaryYAxis) || !string.IsNullOrEmpty(axesData.zAxis))
+            // Detect if secondary Y or Z axis exists
+            var hasSecondaryYAxis = chartPart.ChartSpace.Descendants<ValueAxis>().Skip(1).Any();
+            var hasZAxis = chartPart.ChartSpace.Descendants<SeriesAxis>().Any();
+
+            var result = new Dictionary<string, string>
+    {
+        { "xAxis", xAxis },
+        { "yAxis", yAxis }
+    };
+
+            if (hasSecondaryYAxis)
             {
-                return axesData;
+                result["secondaryYAxis"] = GetAxisTitle<ValueAxis>(chartPart, 1);
             }
 
-            return "No Axes Titles Found";
+            if (hasZAxis)
+            {
+                result["zAxis"] = GetAxisTitle<SeriesAxis>(chartPart);
+            }
+
+            return result;
         }
 
+        //private object GetChartAxes(ChartPart chartPart)
+        //{
+        //    var axesData = new
+        //    {
+        //        xAxis = GetAxisTitle<CategoryAxis>(chartPart),
+        //        yAxis = GetAxisTitle<ValueAxis>(chartPart),
+        //        secondaryYAxis = GetAxisTitle<ValueAxis>(chartPart, 1),
+        //        zAxis = GetAxisTitle<SeriesAxis>(chartPart)
+        //    };
+
+        //    if (!string.IsNullOrEmpty(axesData.xAxis) || !string.IsNullOrEmpty(axesData.yAxis) ||
+        //        !string.IsNullOrEmpty(axesData.secondaryYAxis) || !string.IsNullOrEmpty(axesData.zAxis))
+        //    {
+        //        return axesData;
+        //    }
+
+        //    return "No Axes Titles Found";
+        //}
+
+        //private string GetAxisTitle<T>(ChartPart chartPart, int index = 0) where T : OpenXmlElement
+        //{
+        //    var axis = chartPart.ChartSpace.Descendants<T>().Skip(index).FirstOrDefault();
+        //    if (axis != null)
+        //    {
+        //        var axisTitle = axis.Descendants<Title>().FirstOrDefault();
+        //        var axisText = axisTitle?.Descendants<DocumentFormat.OpenXml.Drawing.Text>().FirstOrDefault()?.Text;
+        //        return axisText ?? "No Title";
+        //    }
+        //    return null;
+        //}
         private string GetAxisTitle<T>(ChartPart chartPart, int index = 0) where T : OpenXmlElement
         {
             var axis = chartPart.ChartSpace.Descendants<T>().Skip(index).FirstOrDefault();
@@ -141,7 +179,7 @@ namespace JobSimulation.excelApp
                 var axisText = axisTitle?.Descendants<DocumentFormat.OpenXml.Drawing.Text>().FirstOrDefault()?.Text;
                 return axisText ?? "No Title";
             }
-            return null;
+            return "No Title"; // <-- Ensure fallback string is consistent
         }
 
         private bool HasChartLegend(ChartPart chartPart)

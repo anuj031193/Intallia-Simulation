@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>True</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <Compile Remove="bll\IValidationForm.cs" />
+    <Compile Remove="bll\SimulationManager - Copy.cs" />
     <Compile Remove="bll\ValidationService.cs" />
     <Compile Remove="bll\ValidationService1.cs" />
     <Compile Remove="excelapp\ChartManager1.cs" />
@@ -51,6 +52,8 @@
     <Compile Remove="forms\frmSimulationSoftware2.Designer.cs" />
     <Compile Remove="forms\ValidationForm.cs" />
     <Compile Remove="forms\ValidationForm.Designer.cs" />
+    <Compile Remove="models\UserSession.cs" />
+    <Compile Remove="powerBiApp\PowerBiValidationService - Copy.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -73,6 +76,9 @@
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.2.0" />
+    <PackageReference Include="Microsoft.AnalysisServices.AdomdClient" Version="19.96.1" />
+    <PackageReference Include="Microsoft.AnalysisServices.AdomdClient.NetCore.retail.amd64" Version="19.84.1" />
+    <PackageReference Include="Microsoft.AnalysisServices.Tabular" Version="13.0.2150.3" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.3" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.3" />
@@ -82,6 +88,7 @@
     <PackageReference Include="Microsoft.Office.Interop.Excel" Version="15.0.4795.1001" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="System.Data.SqlClient" Version="4.9.0" />
+    <PackageReference Include="System.Management" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -101,6 +108,16 @@
 
   <ItemGroup>
     <Service Include="{508349b6-6b84-4df5-91f0-309beebad82d}" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Tools\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="forms\frmSimulationSoftwareCopy.cs" />
+    <None Include="forms\frmSimulationSoftwareCopy.Designer.cs" />
+    <None Include="forms\frmSimulationSoftwareCopy.resx" />
   </ItemGroup>
 
 </Project>
